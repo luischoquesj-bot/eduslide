@@ -1,13 +1,12 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
-import 'package:archive/archive.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_pdfview/flutter_pdfview.dart';
 import 'package:video_player/video_player.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../../explorer/domain/models/resource_item.dart';
+import 'package:eduslide/features/media_viewers/services/document_converter_service.dart';
 
 /// Visor dinámico, interactivo y real de recursos didácticos para el centro de EduSlide.
 /// Integra soporte nativo real para:
@@ -68,9 +67,10 @@ class _InteractiveResourceViewerState extends State<InteractiveResourceViewer>
   VideoPlayerController? _audioController;
   bool _isAudioInitialized = false;
 
-  // Extracción de texto de documentos .docx
-  List<String> _docxParagraphs = [];
-  bool _isDocxLoaded = false;
+  // Extracción y conversión de documentos ofimáticos (.docx, .xlsx, .pptx)
+  String? _convertedPdfPath;
+  bool _isConvertingOfficeDoc = false;
+  String? _conversionErrorMessage;
 
   // Animación para el visualizador de audio
   late AnimationController _waveformAnimController;
@@ -130,8 +130,13 @@ class _InteractiveResourceViewerState extends State<InteractiveResourceViewer>
     _audioController = null;
     _isAudioInitialized = false;
 
-    _docxParagraphs = [];
-    _isDocxLoaded = false;
+    if (_convertedPdfPath != null && _pdfCurrentPage > 0) {
+      _pdfSavedPages[_convertedPdfPath!] = _pdfCurrentPage;
+    }
+    _convertedPdfPath = null;
+    _isConvertingOfficeDoc = false;
+    _conversionErrorMessage = null;
+
     _pdfReady = false;
     _pdfCurrentPage = 0;
     _pdfTotalPages = 0;
@@ -214,42 +219,35 @@ class _InteractiveResourceViewerState extends State<InteractiveResourceViewer>
           setState(() {});
         }
       });
-    } else if (item.extension.toLowerCase().contains('doc') && exists) {
-      _loadDocxContent(file);
+    } else if (item.isOfficeDocument && exists) {
+      _convertOfficeDocument(item);
     }
   }
 
-  Future<void> _loadDocxContent(File file) async {
+  /// Convierte de forma transparente el documento ofimático a PDF en caché temporal
+  Future<void> _convertOfficeDocument(ResourceItem item) async {
+    setState(() {
+      _isConvertingOfficeDoc = true;
+      _convertedPdfPath = null;
+      _conversionErrorMessage = null;
+    });
+
     try {
-      final bytes = await file.readAsBytes();
-      final archive = ZipDecoder().decodeBytes(bytes);
-      final documentXmlFile = archive.findFile('word/document.xml');
-
-      if (documentXmlFile != null) {
-        final xmlString = utf8.decode(documentXmlFile.content as List<int>);
-        // Extracción sencilla de párrafos <w:p> y textos <w:t>
-        final regex = RegExp(r'<w:p[ >](.*?)</w:p>');
-        final matches = regex.allMatches(xmlString);
-        final List<String> paragraphs = [];
-
-        for (final match in matches) {
-          final pXml = match.group(1) ?? '';
-          final textMatches = RegExp(r'<w:t[^>]*>(.*?)</w:t>').allMatches(pXml);
-          final pText = textMatches.map((m) => m.group(1) ?? '').join().trim();
-          if (pText.isNotEmpty) {
-            paragraphs.add(pText);
-          }
-        }
-
-        if (mounted) {
-          setState(() {
-            _docxParagraphs = paragraphs;
-            _isDocxLoaded = true;
-          });
-        }
+      final pdfPath = await DocumentConverterService().getOrConvertDocumentToPdf(item.path);
+      if (mounted && widget.resource.id == item.id) {
+        setState(() {
+          _convertedPdfPath = pdfPath;
+          _isConvertingOfficeDoc = false;
+          _pdfCurrentPage = _pdfSavedPages[pdfPath] ?? 0;
+        });
       }
     } catch (e) {
-      debugPrint('Error al leer DOCX: $e');
+      if (mounted && widget.resource.id == item.id) {
+        setState(() {
+          _isConvertingOfficeDoc = false;
+          _conversionErrorMessage = 'Error al preparar documento: $e';
+        });
+      }
     }
   }
 
@@ -368,7 +366,7 @@ class _InteractiveResourceViewerState extends State<InteractiveResourceViewer>
                     if (!isUltraNarrow) ...[
                       const SizedBox(width: 3),
                       Text(
-                        item.extension.toUpperCase().replaceAll('.', ''),
+                        item.badgeLabel,
                         style: TextStyle(
                           fontSize: 9.0,
                           fontWeight: FontWeight.bold,
@@ -526,8 +524,17 @@ class _InteractiveResourceViewerState extends State<InteractiveResourceViewer>
 
   /// Renderiza el cuerpo según el tipo de recurso
   Widget _buildResourceContent(ResourceItem item) {
-    if (item.extension.toLowerCase().contains('doc')) {
-      return _buildDocxViewer(item);
+    if (item.isOfficeDocument) {
+      if (_isConvertingOfficeDoc) {
+        return _buildOfficeConvertingIndicator(item);
+      }
+      if (_conversionErrorMessage != null) {
+        return _buildOfficeConversionError(item);
+      }
+      if (_convertedPdfPath != null) {
+        return _buildPdfViewerFromPath(_convertedPdfPath!, item);
+      }
+      return _buildOfficeConvertingIndicator(item);
     }
 
     switch (item.type) {
@@ -539,6 +546,13 @@ class _InteractiveResourceViewerState extends State<InteractiveResourceViewer>
         return _buildAudioPlayer(item);
       case ResourceType.pdf:
         return _buildPdfViewer(item);
+      case ResourceType.docx:
+      case ResourceType.xlsx:
+      case ResourceType.pptx:
+        if (_convertedPdfPath != null) {
+          return _buildPdfViewerFromPath(_convertedPdfPath!, item);
+        }
+        return _buildOfficeConvertingIndicator(item);
       case ResourceType.slide:
         return _buildSlideViewer(item);
     }
@@ -1144,10 +1158,13 @@ class _InteractiveResourceViewerState extends State<InteractiveResourceViewer>
     );
   }
 
-  /// 4. LECTOR REAL DE ARCHIVOS PDF (Requisito 4)
-  /// Flechas discretas a los laterales al centro de la ventana, sin botón grande inferior.
+  /// 4. LECTOR REAL DE ARCHIVOS PDF Y DOCUMENTOS OFIMÁTICOS CONVERTIDOS
   Widget _buildPdfViewer(ResourceItem item) {
-    final file = File(item.path);
+    return _buildPdfViewerFromPath(item.path, item);
+  }
+
+  Widget _buildPdfViewerFromPath(String pdfPath, ResourceItem item) {
+    final file = File(pdfPath);
     final exists = file.existsSync();
 
     if (!exists) {
@@ -1301,60 +1318,122 @@ class _InteractiveResourceViewerState extends State<InteractiveResourceViewer>
     );
   }
 
-  /// 5. LECTOR REAL DE ARCHIVOS WORD (.docx) (Requisito 4)
-  Widget _buildDocxViewer(ResourceItem item) {
-    if (!_isDocxLoaded) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const CircularProgressIndicator(color: AppColors.primary),
-            const SizedBox(height: 10),
-            Text(
-              'Extrayendo documento Word: ${item.name}',
-              style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+  String _getLoadingMessageForType(ResourceType type) {
+    switch (type) {
+      case ResourceType.docx:
+        return 'Preparando documento Word...';
+      case ResourceType.xlsx:
+        return 'Cargando hoja de cálculo Excel...';
+      case ResourceType.pptx:
+        return 'Preparando presentación PowerPoint...';
+      default:
+        return 'Preparando documento...';
+    }
+  }
+
+  /// Micro-indicador de carga discreto y elegante para conversión ofimática
+  Widget _buildOfficeConvertingIndicator(ResourceItem item) {
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 20),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceElevated.withValues(alpha: 0.95),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: item.accentColor.withValues(alpha: 0.5), width: 1.2),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.45),
+              blurRadius: 18,
+              offset: const Offset(0, 4),
             ),
           ],
         ),
-      );
-    }
-
-    return Container(
-      color: const Color(0xFF1E222D),
-      child: Center(
-        child: Container(
-          width: 500,
-          margin: const EdgeInsets.all(12),
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(8),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.45),
-                blurRadius: 14,
-                offset: const Offset(0, 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: item.accentColor.withValues(alpha: 0.15),
+                shape: BoxShape.circle,
               ),
-            ],
-          ),
-          child: ListView.separated(
-            physics: const BouncingScrollPhysics(),
-            itemCount: _docxParagraphs.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 10),
-            itemBuilder: (context, index) {
-              final text = _docxParagraphs[index];
-              final isHeader = index == 0 || text.length < 50 && !text.endsWith('.');
-              return Text(
-                text,
-                style: TextStyle(
-                  fontSize: isHeader ? 14.5 : 12.0,
-                  fontWeight: isHeader ? FontWeight.bold : FontWeight.normal,
-                  color: isHeader ? const Color(0xFF0F172A) : const Color(0xFF334155),
-                  height: 1.4,
+              child: SizedBox(
+                width: 30,
+                height: 30,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.8,
+                  valueColor: AlwaysStoppedAnimation<Color>(item.accentColor),
                 ),
-              );
-            },
-          ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              _getLoadingMessageForType(item.type),
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              item.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 10.5,
+                color: AppColors.textMuted,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Generando vista previa en alta fidelidad',
+              style: TextStyle(
+                fontSize: 9.5,
+                color: item.accentColor,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Pantalla de error amigable con botón de reintento si falla la conversión
+  Widget _buildOfficeConversionError(ResourceItem item) {
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+        margin: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceElevated,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.accentRose.withValues(alpha: 0.5), width: 1.2),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.error_outline_rounded, color: AppColors.accentRose, size: 40),
+            const SizedBox(height: 10),
+            Text(
+              'No se pudo abrir ${item.name}',
+              style: AppTextStyles.cardTitle,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              _conversionErrorMessage ?? 'Error al procesar el archivo.',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
+            ),
+            const SizedBox(height: 14),
+            ElevatedButton.icon(
+              onPressed: () => _convertOfficeDocument(item),
+              icon: const Icon(Icons.refresh_rounded, size: 16),
+              label: const Text('Reintentar'),
+              style: ElevatedButton.styleFrom(backgroundColor: item.accentColor),
+            ),
+          ],
         ),
       ),
     );

@@ -4,6 +4,9 @@ import '../../../../core/constants/app_colors.dart';
 /// Clasificación de tipos de recursos didácticos en EduSlide
 enum ResourceType {
   pdf,
+  docx,
+  xlsx,
+  pptx,
   slide,
   image,
   video,
@@ -34,12 +37,15 @@ class ResourceItem {
     return const {
       'pdf',
       'eslide',
+      'eduslide',
       'json',
+      'doc',
+      'docx',
+      'xls',
+      'xlsx',
       'ppt',
       'pptx',
       'odp',
-      'doc',
-      'docx',
       'txt',
       'epub',
       'jpg',
@@ -78,13 +84,19 @@ class ResourceItem {
     switch (cleanExt) {
       case 'pdf':
         return ResourceType.pdf;
-      case 'eslide':
-      case 'json':
+      case 'doc':
+      case 'docx':
+        return ResourceType.docx;
+      case 'xls':
+      case 'xlsx':
+        return ResourceType.xlsx;
       case 'ppt':
       case 'pptx':
       case 'odp':
-      case 'doc':
-      case 'docx':
+        return ResourceType.pptx;
+      case 'eslide':
+      case 'eduslide':
+      case 'json':
       case 'txt':
       case 'epub':
         return ResourceType.slide;
@@ -123,9 +135,19 @@ class ResourceItem {
     }
   }
 
-  /// Retorna si el archivo corresponde al panel izquierdo (Slides y PDFs)
+  /// Retorna si el archivo es un documento ofimático convertible a PDF
+  bool get isOfficeDocument =>
+      type == ResourceType.docx ||
+      type == ResourceType.xlsx ||
+      type == ResourceType.pptx;
+
+  /// Retorna si el archivo corresponde al panel izquierdo (Slides, PDFs y Documentos Ofimáticos)
   bool get isLeftPanelResource =>
-      type == ResourceType.pdf || type == ResourceType.slide;
+      type == ResourceType.pdf ||
+      type == ResourceType.docx ||
+      type == ResourceType.xlsx ||
+      type == ResourceType.pptx ||
+      type == ResourceType.slide;
 
   /// Retorna si el archivo corresponde al panel derecho (Multimedia)
   bool get isRightPanelResource =>
@@ -138,6 +160,12 @@ class ResourceItem {
     switch (type) {
       case ResourceType.pdf:
         return Icons.picture_as_pdf_rounded;
+      case ResourceType.docx:
+        return Icons.article_rounded;
+      case ResourceType.xlsx:
+        return Icons.table_chart_rounded;
+      case ResourceType.pptx:
+        return Icons.co_present_rounded;
       case ResourceType.slide:
         return Icons.slideshow_rounded;
       case ResourceType.image:
@@ -149,13 +177,19 @@ class ResourceItem {
     }
   }
 
-  /// Color de acento visual según el tipo de archivo
+  /// Color corporativo de acento visual según el formato del archivo
   Color get accentColor {
     switch (type) {
       case ResourceType.pdf:
-        return AppColors.accentRose;
+        return const Color(0xFFD32F2F); // Rojo institucional PDF
+      case ResourceType.docx:
+        return const Color(0xFF185ABD); // Azul Word oficial
+      case ResourceType.xlsx:
+        return const Color(0xFF107C41); // Verde Excel oficial
+      case ResourceType.pptx:
+        return const Color(0xFFD24726); // Naranja PowerPoint oficial
       case ResourceType.slide:
-        return AppColors.primary;
+        return const Color(0xFF00897B); // Verde azulado EduSlide
       case ResourceType.image:
         return AppColors.accentGreen;
       case ResourceType.video:
@@ -165,17 +199,45 @@ class ResourceItem {
     }
   }
 
+  /// Etiqueta corta institucional (Badge) para el carrusel y visor
+  String get badgeLabel {
+    switch (type) {
+      case ResourceType.pdf:
+        return 'PDF';
+      case ResourceType.docx:
+        return 'DOCX';
+      case ResourceType.xlsx:
+        return 'XLSX';
+      case ResourceType.pptx:
+        return 'PPTX';
+      case ResourceType.slide:
+        return 'SLIDE';
+      case ResourceType.image:
+        return 'IMG';
+      case ResourceType.video:
+        return 'VIDEO';
+      case ResourceType.audio:
+        return 'AUDIO';
+    }
+  }
+
   /// Categoría en texto breve para la tarjeta
   String get categoryLabel {
     switch (type) {
       case ResourceType.pdf:
-        return 'PDF Doc';
+        return 'Documento PDF';
+      case ResourceType.docx:
+        return 'Documento Word';
+      case ResourceType.xlsx:
+        return 'Hoja de Cálculo Excel';
+      case ResourceType.pptx:
+        return 'Presentación PPTX';
       case ResourceType.slide:
-        return 'Slide Flutter';
+        return 'Diapositiva EduSlide';
       case ResourceType.image:
-        return 'HD Imagen';
+        return 'Imagen HD';
       case ResourceType.video:
-        return 'Video HD';
+        return 'Video Didáctico';
       case ResourceType.audio:
         return 'Audio Clase';
     }

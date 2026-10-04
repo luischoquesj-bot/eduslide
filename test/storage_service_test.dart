@@ -53,22 +53,64 @@ void main() {
         type: ResourceItem.typeFromExtension('.mp3'),
       );
 
+      final docxItem = ResourceItem(
+        id: '6',
+        path: '/storage/docs/plan.docx',
+        name: 'Plan',
+        extension: '.docx',
+        sizeBytes: 1048576,
+        type: ResourceItem.typeFromExtension('.docx'),
+      );
+
+      final xlsxItem = ResourceItem(
+        id: '7',
+        path: '/storage/docs/notas.xlsx',
+        name: 'Notas',
+        extension: '.xlsx',
+        sizeBytes: 1048576,
+        type: ResourceItem.typeFromExtension('.xlsx'),
+      );
+
+      final pptxItem = ResourceItem(
+        id: '8',
+        path: '/storage/docs/tema.pptx',
+        name: 'Tema',
+        extension: '.pptx',
+        sizeBytes: 1048576,
+        type: ResourceItem.typeFromExtension('.pptx'),
+      );
+
       // Verificación de tipos
       expect(pdfItem.type, ResourceType.pdf);
       expect(slideItem.type, ResourceType.slide);
       expect(imgItem.type, ResourceType.image);
       expect(vidItem.type, ResourceType.video);
       expect(audItem.type, ResourceType.audio);
+      expect(docxItem.type, ResourceType.docx);
+      expect(xlsxItem.type, ResourceType.xlsx);
+      expect(pptxItem.type, ResourceType.pptx);
+
+      // Verificación de badges y ofimática
+      expect(docxItem.badgeLabel, 'DOCX');
+      expect(xlsxItem.badgeLabel, 'XLSX');
+      expect(pptxItem.badgeLabel, 'PPTX');
+      expect(docxItem.isOfficeDocument, isTrue);
+      expect(xlsxItem.isOfficeDocument, isTrue);
+      expect(pptxItem.isOfficeDocument, isTrue);
 
       // Verificación de asignación a paneles laterales
       expect(pdfItem.isLeftPanelResource, isTrue);
       expect(slideItem.isLeftPanelResource, isTrue);
+      expect(docxItem.isLeftPanelResource, isTrue);
+      expect(xlsxItem.isLeftPanelResource, isTrue);
+      expect(pptxItem.isLeftPanelResource, isTrue);
       expect(imgItem.isLeftPanelResource, isFalse);
 
       expect(imgItem.isRightPanelResource, isTrue);
       expect(vidItem.isRightPanelResource, isTrue);
       expect(audItem.isRightPanelResource, isTrue);
       expect(pdfItem.isRightPanelResource, isFalse);
+      expect(docxItem.isRightPanelResource, isFalse);
 
       // Formato legible de tamaño
       expect(pdfItem.formattedSize, '1.0 MB');
