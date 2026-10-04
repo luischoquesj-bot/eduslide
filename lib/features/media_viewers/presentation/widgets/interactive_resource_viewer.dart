@@ -303,136 +303,158 @@ class _InteractiveResourceViewerState extends State<InteractiveResourceViewer>
     );
   }
 
-  /// Barra superior interactiva con conmutadores de porcentaje y cierre
+  /// Barra superior interactiva con conmutadores de porcentaje y cierre responsivos
   Widget _buildViewerHeader(ResourceItem item) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceElevated,
-        border: Border(
-          bottom: BorderSide(
-            color: AppColors.borderSubtle.withValues(alpha: 0.7),
-            width: 1.0,
-          ),
-        ),
-      ),
-      child: Row(
-        children: [
-          // Ícono y etiqueta del tipo
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-            decoration: BoxDecoration(
-              color: item.accentColor.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(
-                color: item.accentColor.withValues(alpha: 0.4),
-                width: 0.8,
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(item.icon, size: 14, color: item.accentColor),
-                const SizedBox(width: 4),
-                Text(
-                  item.extension.toUpperCase().replaceAll('.', ''),
-                  style: TextStyle(
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.bold,
-                    color: item.accentColor,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final double w = constraints.maxWidth;
+        final bool isNarrow = w < 400;
+        final bool isVeryNarrow = w < 320;
+        final bool isUltraNarrow = w < 240;
 
-          // Título del archivo
-          Expanded(
-            child: Tooltip(
-              message: item.name,
-              child: Text(
-                item.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: AppTextStyles.cardTitle.copyWith(fontSize: 12.5),
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+          decoration: BoxDecoration(
+            color: AppColors.surfaceElevated,
+            border: Border(
+              bottom: BorderSide(
+                color: AppColors.borderSubtle.withValues(alpha: 0.7),
+                width: 1.0,
               ),
             ),
           ),
-          const SizedBox(width: 6),
-
-          // Selector de porcentaje rápido y conmutador de lado (solo si no es overlay fijo)
-          if (widget.showLayoutControls) ...[
-            _buildRatioButtons(),
-            const SizedBox(width: 6),
-            if (widget.onSideToggle != null)
-              Tooltip(
-                message: widget.isResourceOnLeft
-                    ? 'Colocar recurso a la derecha'
-                    : 'Colocar recurso a la izquierda',
-                child: InkWell(
-                  onTap: () => widget.onSideToggle?.call(!widget.isResourceOnLeft),
-                  borderRadius: BorderRadius.circular(6),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceLight.withValues(alpha: 0.6),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: AppColors.borderHighlight, width: 0.8),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          widget.isResourceOnLeft
-                              ? Icons.arrow_back_rounded
-                              : Icons.arrow_forward_rounded,
-                          size: 12,
-                          color: AppColors.primary,
-                        ),
-                        const SizedBox(width: 2),
-                        Text(
-                          widget.isResourceOnLeft ? 'Izq' : 'Der',
-                          style: const TextStyle(
-                            fontSize: 9.5,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            const SizedBox(width: 6),
-          ],
-
-          // Botón Cerrar (X) para retornar a pizarra completa
-          Tooltip(
-            message: 'Cerrar recurso (Volver a pizarra completa)',
-            child: InkWell(
-              onTap: widget.onClose,
-              borderRadius: BorderRadius.circular(6),
-              child: Container(
-                padding: const EdgeInsets.all(4),
+          child: Row(
+            children: [
+              // Ícono y etiqueta del tipo (adaptable)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                 decoration: BoxDecoration(
-                  color: AppColors.accentRose.withValues(alpha: 0.15),
+                  color: item.accentColor.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: item.accentColor.withValues(alpha: 0.4),
+                    width: 0.8,
+                  ),
                 ),
-                child: const Icon(
-                  Icons.close_rounded,
-                  size: 15,
-                  color: AppColors.accentRose,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(item.icon, size: 13, color: item.accentColor),
+                    if (!isUltraNarrow) ...[
+                      const SizedBox(width: 3),
+                      Text(
+                        item.extension.toUpperCase().replaceAll('.', ''),
+                        style: TextStyle(
+                          fontSize: 9.0,
+                          fontWeight: FontWeight.bold,
+                          color: item.accentColor,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
-            ),
+              const SizedBox(width: 6),
+
+              // Título del archivo (se contrae con puntos suspensivos sin causar desbordamiento)
+              Expanded(
+                child: Tooltip(
+                  message: item.name,
+                  child: Text(
+                    item.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.cardTitle.copyWith(
+                      fontSize: isVeryNarrow ? 11.0 : 12.0,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+
+              // Selector de porcentaje rápido (50% | 75% | 100%)
+              if (widget.showLayoutControls && !isVeryNarrow) ...[
+                _buildRatioButtons(),
+                const SizedBox(width: 4),
+              ],
+
+              // Conmutador de Lado (Izq / Der) solo con suficiente ancho
+              if (widget.showLayoutControls && widget.onSideToggle != null && !isNarrow) ...[
+                Tooltip(
+                  message: widget.isResourceOnLeft
+                      ? 'Colocar recurso a la derecha'
+                      : 'Colocar recurso a la izquierda',
+                  child: InkWell(
+                    onTap: () => widget.onSideToggle?.call(!widget.isResourceOnLeft),
+                    borderRadius: BorderRadius.circular(6),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceLight.withValues(alpha: 0.6),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: AppColors.borderHighlight, width: 0.8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            widget.isResourceOnLeft
+                                ? Icons.arrow_back_rounded
+                                : Icons.arrow_forward_rounded,
+                            size: 12,
+                            color: AppColors.primary,
+                          ),
+                          const SizedBox(width: 2),
+                          Text(
+                            widget.isResourceOnLeft ? 'Izq' : 'Der',
+                            style: const TextStyle(
+                              fontSize: 9.0,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+              ],
+
+              // Botón Cerrar (X) con tamaño óptimo y facilidad de uso (Requisito 4)
+              Tooltip(
+                message: 'Cerrar recurso',
+                child: InkWell(
+                  onTap: widget.onClose,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    width: 32,
+                    height: 32,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: AppColors.accentRose.withValues(alpha: 0.22),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: AppColors.accentRose.withValues(alpha: 0.55),
+                        width: 1.2,
+                      ),
+                    ),
+                    child: const Icon(
+                      Icons.close_rounded,
+                      size: 20,
+                      color: AppColors.accentRose,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
-  /// Botones de selección de porcentaje (50%, 75%, 100%)
+  /// Botones de selección de porcentaje (50%, 75%, 100%) compactos y adaptables
   Widget _buildRatioButtons() {
     return Container(
       padding: const EdgeInsets.all(2),
@@ -460,7 +482,7 @@ class _InteractiveResourceViewerState extends State<InteractiveResourceViewer>
       },
       borderRadius: BorderRadius.circular(6),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
         decoration: BoxDecoration(
           color: isSelected ? AppColors.primary : Colors.transparent,
           borderRadius: BorderRadius.circular(6),
@@ -468,7 +490,7 @@ class _InteractiveResourceViewerState extends State<InteractiveResourceViewer>
         child: Text(
           label,
           style: TextStyle(
-            fontSize: 9.5,
+            fontSize: 9.0,
             fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
             color: isSelected ? Colors.white : AppColors.textMuted,
           ),

@@ -31,18 +31,20 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   // Estado del explorador curricular
   StorageUnit? _currentStorageUnit;
   TopicFolder? _currentTopic;
-  ResourceItem? _selectedResource;
 
-  // Recurso del carrusel derecho cargado en nuevo lienzo encima de la pizarra (Requisito 1)
-  ResourceItem? _whiteboardOverlayResource;
+  // Recursos activos en pantalla (Requisitos 1, 2 y 5)
+  ResourceItem? _leftResource; // Recurso del carrusel izquierdo (PDFs, Diapositivas, Docs)
+  ResourceItem? _rightResource; // Recurso del carrusel derecho (Imágenes, Videos, Audios)
+
+  // Claves persistentes para preservar estados (reproducción, página de PDF, zoom y trazos)
   final GlobalKey _whiteboardKey = GlobalKey();
-  final GlobalKey _mainResourceViewerKey = GlobalKey();
-  final GlobalKey _overlayResourceViewerKey = GlobalKey();
+  final GlobalKey _leftResourceViewerKey = GlobalKey();
+  final GlobalKey _rightResourceViewerKey = GlobalKey();
 
-  // Estado de distribución de pantalla y proporción del recurso activo
+  // Estado de distribución de pantalla y proporciones iniciales (50% / 50% compartido predeterminado)
   ScreenDistributionMode _layoutMode = ScreenDistributionMode.standard801010;
-  double _resourceSplitRatio = 0.50; // 0.50 (50%), 0.75 (75%), 1.00 (100%)
-  bool _isResourceOnLeft = false; // false = derecha de la pizarra, true = izquierda de la pizarra
+  double _leftResourceRatio = 0.50; // Inicial al 50%
+  double _rightResourceRatio = 0.50; // Inicial al 50%
 
   // Estado del mando remoto
   bool _isRemoteConnected = false;
@@ -154,89 +156,115 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     );
   }
 
-  void _onResourceSelected(ResourceItem item) {
+  /// Selección de recurso desde el carrusel izquierdo (PDFs, Diapositivas, Docs) (Requisitos 1 & 2):
+  /// Se abre predeterminadamente al 50%, compartiendo espacio con la pizarra (que pasa a 50%)
+  /// o compartiendo espacio 50/50 con el recurso del carrusel derecho si ya estuviera abierto.
+  void _onLeftResourceSelected(ResourceItem item) {
     setState(() {
-      _selectedResource = item;
-      // Si la pizarra estaba ocupando el 100% libre, cambia a estándar para mostrar el recurso junto al espacio
+      _leftResource = item;
+      _leftResourceRatio = 0.50; // Inicial predeterminado al 50%
+      if (_rightResource != null) {
+        _rightResourceRatio = 0.50;
+      }
       if (_layoutMode == ScreenDistributionMode.full100) {
         _layoutMode = ScreenDistributionMode.standard801010;
       }
-    });
-  }
-
-  /// Selección de recursos del carrusel derecho (Imágenes, Videos, Audios, etc.) (Requisito 1):
-  /// Se cargan en un nuevo lienzo encima de donde se encuentre la pizarra reemplazándola por completo,
-  /// ocupando el mismo espacio y proporción asignada a la pizarra, sin borrar lo que esté dibujado en ella.
-  void _onRightResourceSelected(ResourceItem item) {
-    setState(() {
-      _whiteboardOverlayResource = item;
       _showWelcomeCard = false;
     });
   }
 
-  /// Construye el lienzo de la pizarra con soporte de superposición total de recursos del carrusel derecho.
-  /// Mantiene la pizarra siempre montada debajo para no borrar ningún trazo.
-  Widget _buildWhiteboardArea({bool isStandalone = false}) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        // 1. Pizarra de dibujo activa e inalterada
-        WhiteboardCanvas(
-          key: _whiteboardKey,
-          isStandalone: isStandalone,
-        ),
+  /// Selección de recurso desde el carrusel derecho (Imágenes, Videos, Audios) (Requisitos 1 & 2):
+  /// Se abre predeterminadamente al 50%, compartiendo espacio con la pizarra (que pasa a 50%)
+  /// o compartiendo espacio 50/50 con el recurso del carrusel izquierdo si ya estuviera abierto.
+  void _onRightResourceSelected(ResourceItem item) {
+    setState(() {
+      _rightResource = item;
+      _rightResourceRatio = 0.50; // Inicial predeterminado al 50%
+      if (_leftResource != null) {
+        _leftResourceRatio = 0.50;
+      }
+      if (_layoutMode == ScreenDistributionMode.full100) {
+        _layoutMode = ScreenDistributionMode.standard801010;
+      }
+      _showWelcomeCard = false;
+    });
+  }
 
-        // 2. Nuevo lienzo superpuesto con el recurso del carrusel derecho (lo cubre por completo)
-        if (_whiteboardOverlayResource != null)
-          Positioned.fill(
-            child: InteractiveResourceViewer(
-              key: _overlayResourceViewerKey,
-              resource: _whiteboardOverlayResource!,
-              currentRatio: 1.0,
-              showLayoutControls: false,
-              onClose: () {
-                setState(() {
-                  _whiteboardOverlayResource = null;
-                });
-              },
-            ),
-          ),
-      ],
+  /// Lienzo de pizarra interactiva manteniendo la misma GlobalKey para no perder trazos.
+  Widget _buildWhiteboard({bool isStandalone = false}) {
+    return WhiteboardCanvas(
+      key: _whiteboardKey,
+      isStandalone: isStandalone,
     );
   }
 
-  /// Construye el visor principal preservando su estado (reproducción, segundo exacto, página de PDF, zoom)
-  /// mediante una GlobalKey persistente al cambiar de porcentaje (50%, 75%, 100%) o distribución de pantalla.
-  Widget _buildMainResourceViewer({required double currentRatio}) {
-    if (_selectedResource == null) return const SizedBox.shrink();
+  /// Construye el visor del recurso izquierdo preservando su estado (página PDF, scroll, zoom)
+  Widget _buildLeftViewer({required double currentRatio}) {
+    if (_leftResource == null) return const SizedBox.shrink();
 
     return InteractiveResourceViewer(
-      key: _mainResourceViewerKey,
-      resource: _selectedResource!,
+      key: _leftResourceViewerKey,
+      resource: _leftResource!,
       currentRatio: currentRatio,
-      isResourceOnLeft: _isResourceOnLeft,
+      isResourceOnLeft: true,
       onClose: () {
         setState(() {
-          _selectedResource = null;
+          _leftResource = null;
+          // Si el derecho está abierto, se mantiene a 50% compartiendo con la pizarra que se re-descubre
+          if (_rightResource != null) {
+            _rightResourceRatio = 0.50;
+          }
         });
       },
       onRatioChanged: (ratio) {
         setState(() {
-          _resourceSplitRatio = ratio;
-          if (ratio >= 0.95) {
-            _layoutMode = ScreenDistributionMode.full100;
-          } else if ((ratio - 0.50).abs() < 0.05) {
-            _layoutMode = ScreenDistributionMode.split5050;
-          } else if ((ratio - 0.75).abs() < 0.05) {
-            _layoutMode = ScreenDistributionMode.split7525;
-          } else {
-            _layoutMode = ScreenDistributionMode.standard801010;
+          _leftResourceRatio = ratio;
+          if (_rightResource != null) {
+            _rightResourceRatio = (1.0 - ratio).clamp(0.20, 0.80);
           }
         });
       },
       onSideToggle: (onLeft) {
         setState(() {
-          _isResourceOnLeft = onLeft;
+          final temp = _leftResource;
+          _leftResource = _rightResource;
+          _rightResource = temp;
+        });
+      },
+    );
+  }
+
+  /// Construye el visor del recurso derecho preservando su estado (segundo de video/audio, zoom)
+  Widget _buildRightViewer({required double currentRatio}) {
+    if (_rightResource == null) return const SizedBox.shrink();
+
+    return InteractiveResourceViewer(
+      key: _rightResourceViewerKey,
+      resource: _rightResource!,
+      currentRatio: currentRatio,
+      isResourceOnLeft: false,
+      onClose: () {
+        setState(() {
+          _rightResource = null;
+          // Si el izquierdo está abierto, se mantiene a 50% compartiendo con la pizarra que se re-descubre
+          if (_leftResource != null) {
+            _leftResourceRatio = 0.50;
+          }
+        });
+      },
+      onRatioChanged: (ratio) {
+        setState(() {
+          _rightResourceRatio = ratio;
+          if (_leftResource != null) {
+            _leftResourceRatio = (1.0 - ratio).clamp(0.20, 0.80);
+          }
+        });
+      },
+      onSideToggle: (onLeft) {
+        setState(() {
+          final temp = _leftResource;
+          _leftResource = _rightResource;
+          _rightResource = temp;
         });
       },
     );
@@ -303,9 +331,11 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       case ScreenDistributionMode.full100:
         return Padding(
           padding: const EdgeInsets.all(1.5),
-          child: _selectedResource != null
-              ? _buildMainResourceViewer(currentRatio: 1.0)
-              : _buildWhiteboardArea(isStandalone: true),
+          child: _leftResource != null
+              ? _buildLeftViewer(currentRatio: 1.0)
+              : (_rightResource != null
+                  ? _buildRightViewer(currentRatio: 1.0)
+                  : _buildWhiteboard(isStandalone: true)),
         );
 
       case ScreenDistributionMode.split5050:
@@ -331,19 +361,18 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                 flex: 10,
                 child: LeftMediaCarousel(
                   resources: leftResources,
-                  onResourceTap: _onResourceSelected,
+                  onResourceTap: _onLeftResourceSelected,
                   onOpenTopicSelector: () => _openFolderPickerDialog(),
                 ),
               ),
 
-              // 2. Área Central: Espacio de trabajo interactivo adaptable (Pizarra + Recurso cargado)
+              // 2. Área Central: Espacio de trabajo interactivo adaptable (Pizarra + Recursos cargados)
               Expanded(
                 flex: 80,
                 child: _buildCenterWorkspace(),
               ),
 
               // 3. Carrusel lateral derecho (Imágenes, Videos y Audios)
-              // Al tocar un recurso, se carga sobre la pizarra en un nuevo lienzo (Requisito 1)
               Expanded(
                 flex: 10,
                 child: RightMediaCarousel(
@@ -358,58 +387,144 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     }
   }
 
-  /// Área central del modo estándar: muestra la pizarra completa si no hay recurso seleccionado,
-  /// o divide la pantalla entre el recurso activo (interactivo y real) y la pizarra según el porcentaje elegido.
+  /// Área central del modo estándar (Requisitos 1, 2 y 5):
+  /// - Sin recursos: Pizarra al 100% libre.
+  /// - 1 recurso izquierdo: 50% recurso izquierdo y 50% pizarra a la derecha.
+  /// - 1 recurso derecho: 50% pizarra a la izquierda y 50% recurso derecho a la derecha.
+  /// - 2 recursos abiertos (izq y der): se muestran lado a lado compartiendo el 50% cada uno,
+  ///   manteniendo la pizarra montada detrás para no perder trazos ni dibujos.
   Widget _buildCenterWorkspace() {
-    if (_selectedResource == null) {
+    final bool hasLeft = _leftResource != null;
+    final bool hasRight = _rightResource != null;
+
+    // Caso 1: Solo Pizarra completa (100%)
+    if (!hasLeft && !hasRight) {
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 2.0),
-        child: _buildWhiteboardArea(),
+        child: _buildWhiteboard(isStandalone: true),
       );
     }
 
-    final viewer = _buildMainResourceViewer(currentRatio: _resourceSplitRatio);
+    // Caso 4: Ambos recursos abiertos lado a lado (50% / 50% inicial) (Requisito 2 & 5)
+    if (hasLeft && hasRight) {
+      if (_leftResourceRatio >= 0.95) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2.0),
+          child: _buildLeftViewer(currentRatio: 1.0),
+        );
+      }
+      if (_rightResourceRatio >= 0.95) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2.0),
+          child: _buildRightViewer(currentRatio: 1.0),
+        );
+      }
 
-    if (_resourceSplitRatio >= 0.95) {
+      final int leftFlex = (_leftResourceRatio * 100).toInt().clamp(20, 80);
+      final int rightFlex = 100 - leftFlex;
+
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 2.0),
-        child: viewer,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Pizarra montada debajo para preservar trazos y dibujos
+            _buildWhiteboard(isStandalone: false),
+
+            // Ambos recursos visibles lado a lado en primer plano sin taparse
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  flex: leftFlex,
+                  child: _buildLeftViewer(currentRatio: leftFlex / 100.0),
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  flex: rightFlex,
+                  child: _buildRightViewer(currentRatio: rightFlex / 100.0),
+                ),
+              ],
+            ),
+          ],
+        ),
       );
     }
 
-    final int resourceFlex = (_resourceSplitRatio * 100).toInt().clamp(20, 80);
-    final int whiteboardFlex = 100 - resourceFlex;
+    // Caso 2: Solo Recurso Izquierdo + Pizarra a la Derecha (50% / 50% inicial) (Requisito 1)
+    if (hasLeft && !hasRight) {
+      if (_leftResourceRatio >= 0.95) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2.0),
+          child: _buildLeftViewer(currentRatio: 1.0),
+        );
+      }
 
-    final resourceWidget = Expanded(
-      flex: resourceFlex,
-      child: viewer,
-    );
+      final int leftFlex = (_leftResourceRatio * 100).toInt().clamp(20, 80);
+      final int whiteboardFlex = 100 - leftFlex;
 
-    final whiteboardWidget = Expanded(
-      flex: 100,
-      child: _buildWhiteboardArea(),
-    );
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2.0),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              flex: leftFlex,
+              child: _buildLeftViewer(currentRatio: leftFlex / 100.0),
+            ),
+            const SizedBox(width: 4),
+            Expanded(
+              flex: whiteboardFlex,
+              child: _buildWhiteboard(isStandalone: false),
+            ),
+          ],
+        ),
+      );
+    }
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 2.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: _isResourceOnLeft
-            ? [resourceWidget, const SizedBox(width: 4), Expanded(flex: whiteboardFlex, child: whiteboardWidget)]
-            : [Expanded(flex: whiteboardFlex, child: whiteboardWidget), const SizedBox(width: 4), resourceWidget],
-      ),
-    );
+    // Caso 3: Pizarra a la Izquierda + Recurso Derecho (50% / 50% inicial) (Requisito 1)
+    if (!hasLeft && hasRight) {
+      if (_rightResourceRatio >= 0.95) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2.0),
+          child: _buildRightViewer(currentRatio: 1.0),
+        );
+      }
+
+      final int rightFlex = (_rightResourceRatio * 100).toInt().clamp(20, 80);
+      final int whiteboardFlex = 100 - rightFlex;
+
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2.0),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              flex: whiteboardFlex,
+              child: _buildWhiteboard(isStandalone: false),
+            ),
+            const SizedBox(width: 4),
+            Expanded(
+              flex: rightFlex,
+              child: _buildRightViewer(currentRatio: rightFlex / 100.0),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return _buildWhiteboard(isStandalone: true);
   }
 
   /// Distribución dividida proporcional para modos 50/50 y 75/25
   Widget _buildSplitLayout({required int resourceFlex, required int whiteboardFlex}) {
-    if (_selectedResource == null) {
+    if (_leftResource == null && _rightResource == null) {
       return Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Expanded(
             flex: whiteboardFlex,
-            child: _buildWhiteboardArea(),
+            child: _buildWhiteboard(isStandalone: false),
           ),
           const SizedBox(width: 3),
           Expanded(
@@ -420,19 +535,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       );
     }
 
-    final viewer = _buildMainResourceViewer(
-      currentRatio: resourceFlex / (resourceFlex + whiteboardFlex),
-    );
-
-    final resourceWidget = Expanded(flex: resourceFlex, child: viewer);
-    final whiteboardWidget = Expanded(flex: 100, child: _buildWhiteboardArea());
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: _isResourceOnLeft
-          ? [resourceWidget, const SizedBox(width: 4), Expanded(flex: whiteboardFlex, child: whiteboardWidget)]
-          : [Expanded(flex: whiteboardFlex, child: whiteboardWidget), const SizedBox(width: 4), resourceWidget],
-    );
+    return _buildCenterWorkspace();
   }
 
   /// Vista complementaria para el modo 50/50 y 75/25:
@@ -554,7 +657,13 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                       final item = allResources[index];
                       return InkWell(
                         onTap: () {
-                          _onResourceSelected(item);
+                          if (item.type == ResourceType.pdf ||
+                              item.type == ResourceType.slide ||
+                              item.extension.toLowerCase().contains('doc')) {
+                            _onLeftResourceSelected(item);
+                          } else {
+                            _onRightResourceSelected(item);
+                          }
                         },
                         borderRadius: BorderRadius.circular(10),
                         child: Container(
@@ -692,6 +801,11 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   }
 
   void _openControlBottomSheet() {
+    final bool hasActive = _leftResource != null || _rightResource != null;
+    final double activeRatio = _leftResource != null
+        ? _leftResourceRatio
+        : (_rightResource != null ? _rightResourceRatio : 0.50);
+
     ControlBottomSheet.show(
       context,
       currentLayout: _layoutMode,
@@ -706,10 +820,17 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           _isRemoteConnected = connected;
         });
       },
-      currentSplitRatio: _resourceSplitRatio,
+      currentSplitRatio: activeRatio,
       onSplitRatioChanged: (ratio) {
         setState(() {
-          _resourceSplitRatio = ratio;
+          if (_leftResource != null) {
+            _leftResourceRatio = ratio;
+            if (_rightResource != null) {
+              _rightResourceRatio = (1.0 - ratio).clamp(0.20, 0.80);
+            }
+          } else if (_rightResource != null) {
+            _rightResourceRatio = ratio;
+          }
           if (ratio >= 0.95 && _layoutMode == ScreenDistributionMode.full100) {
             // Se mantiene en pantalla completa
           } else if (_layoutMode == ScreenDistributionMode.full100 && ratio < 0.95) {
@@ -717,16 +838,19 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           }
         });
       },
-      isResourceOnLeft: _isResourceOnLeft,
+      isResourceOnLeft: _leftResource != null,
       onResourceSideChanged: (onLeft) {
         setState(() {
-          _isResourceOnLeft = onLeft;
+          final temp = _leftResource;
+          _leftResource = _rightResource;
+          _rightResource = temp;
         });
       },
-      hasActiveResource: _selectedResource != null,
+      hasActiveResource: hasActive,
       onCloseResource: () {
         setState(() {
-          _selectedResource = null;
+          _leftResource = null;
+          _rightResource = null;
         });
       },
     );
