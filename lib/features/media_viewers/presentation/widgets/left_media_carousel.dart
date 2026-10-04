@@ -207,57 +207,10 @@ class _LeftMediaCarouselState extends State<LeftMediaCarousel> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Miniatura de previsualización tipo diapositiva
+              // Miniatura de previsualización visual temática
               AspectRatio(
                 aspectRatio: 16 / 10,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: item.accentColor.withValues(alpha: 0.14),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: item.accentColor.withValues(alpha: 0.3),
-                      width: 0.6,
-                    ),
-                  ),
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      // Líneas simuladas de contenido de documento/slide
-                      Positioned(
-                        top: 3,
-                        left: 4,
-                        right: 4,
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 6,
-                              height: 2,
-                              decoration: BoxDecoration(
-                                color: item.accentColor.withValues(alpha: 0.8),
-                                borderRadius: BorderRadius.circular(1),
-                              ),
-                            ),
-                            const SizedBox(width: 2),
-                            Expanded(
-                              child: Container(
-                                height: 1.5,
-                                decoration: BoxDecoration(
-                                  color: Colors.white24,
-                                  borderRadius: BorderRadius.circular(1),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Icon(
-                        item.icon,
-                        size: 20,
-                        color: item.accentColor,
-                      ),
-                    ],
-                  ),
-                ),
+                child: _buildThumbnail(item),
               ),
               const SizedBox(height: 3),
 
@@ -316,6 +269,97 @@ class _LeftMediaCarouselState extends State<LeftMediaCarousel> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// Genera una miniatura rica y realista del recurso para certeza visual del maestro
+  Widget _buildThumbnail(ResourceItem item) {
+    final bool isPdf = item.type == ResourceType.pdf;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: isPdf ? const Color(0xFF2B1D24) : const Color(0xFF132238),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: item.accentColor.withValues(alpha: 0.4),
+          width: 0.7,
+        ),
+      ),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // Maqueta visual de miniatura de página o diapositiva
+          Positioned(
+            top: 4,
+            left: 5,
+            right: 5,
+            bottom: 4,
+            child: Container(
+              padding: const EdgeInsets.all(3),
+              decoration: BoxDecoration(
+                color: isPdf ? Colors.white.withValues(alpha: 0.08) : AppColors.surfaceLight.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 10,
+                        height: 2.5,
+                        decoration: BoxDecoration(
+                          color: item.accentColor,
+                          borderRadius: BorderRadius.circular(1),
+                        ),
+                      ),
+                      const SizedBox(width: 2),
+                      Expanded(
+                        child: Container(
+                          height: 1.5,
+                          color: Colors.white24,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  Container(height: 1.5, width: 22, color: Colors.white12),
+                  const SizedBox(height: 2),
+                  Container(height: 1.5, width: 16, color: Colors.white12),
+                ],
+              ),
+            ),
+          ),
+
+          // Ícono central representativo
+          Icon(
+            item.icon,
+            size: 20,
+            color: item.accentColor,
+          ),
+
+          // Badge en la esquina superior derecha
+          Positioned(
+            top: 2,
+            right: 2,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+              decoration: BoxDecoration(
+                color: Colors.black87,
+                borderRadius: BorderRadius.circular(3),
+              ),
+              child: Text(
+                isPdf ? 'PDF' : item.extension.toUpperCase().replaceAll('.', ''),
+                style: TextStyle(
+                  fontSize: 6.0,
+                  fontWeight: FontWeight.bold,
+                  color: item.accentColor,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

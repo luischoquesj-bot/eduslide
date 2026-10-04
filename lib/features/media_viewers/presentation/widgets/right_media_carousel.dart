@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../explorer/domain/models/resource_item.dart';
@@ -215,53 +216,10 @@ class _RightMediaCarouselState extends State<RightMediaCarousel> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Miniatura de previsualización tipo tarjeta visual multimedia
+              // Miniatura de previsualización visual real multimedia
               AspectRatio(
                 aspectRatio: 16 / 10,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: item.accentColor.withValues(alpha: 0.14),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: item.accentColor.withValues(alpha: 0.3),
-                      width: 0.6,
-                    ),
-                  ),
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      // Badge tipo minúsculo en la esquina superior
-                      Positioned(
-                        top: 2,
-                        right: 3,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: Colors.black54,
-                            borderRadius: BorderRadius.circular(3),
-                          ),
-                          child: Text(
-                            item.type == ResourceType.video
-                                ? 'VID'
-                                : item.type == ResourceType.audio
-                                    ? 'AUD'
-                                    : 'IMG',
-                            style: TextStyle(
-                              fontSize: 6.5,
-                              fontWeight: FontWeight.bold,
-                              color: item.accentColor,
-                            ),
-                          ),
-                        ),
-                      ),
-                      Icon(
-                        item.icon,
-                        size: 20,
-                        color: item.accentColor,
-                      ),
-                    ],
-                  ),
-                ),
+                child: _buildThumbnail(item),
               ),
               const SizedBox(height: 3),
 
@@ -320,6 +278,199 @@ class _RightMediaCarouselState extends State<RightMediaCarousel> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// Genera una miniatura rica y realista del recurso para certeza visual del maestro
+  Widget _buildThumbnail(ResourceItem item) {
+    if (item.type == ResourceType.image) {
+      final file = File(item.path);
+      if (file.existsSync()) {
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Image.file(
+                file,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) =>
+                    _buildFallbackIconThumbnail(item),
+              ),
+              Positioned(
+                top: 2,
+                right: 2,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.7),
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                  child: Text(
+                    item.extension.toUpperCase().replaceAll('.', ''),
+                    style: const TextStyle(
+                      fontSize: 6.0,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.accentGreen,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+    } else if (item.type == ResourceType.video) {
+      return Container(
+        decoration: BoxDecoration(
+          color: const Color(0xFF0F172A),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: AppColors.secondary.withValues(alpha: 0.35),
+            width: 0.6,
+          ),
+        ),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                gradient: LinearGradient(
+                  colors: [
+                    AppColors.secondary.withValues(alpha: 0.15),
+                    Colors.black.withValues(alpha: 0.6),
+                  ],
+                ),
+              ),
+            ),
+            const Icon(
+              Icons.play_circle_fill_rounded,
+              size: 22,
+              color: AppColors.secondary,
+            ),
+            Positioned(
+              top: 2,
+              right: 2,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+                decoration: BoxDecoration(
+                  color: Colors.black87,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+                child: const Text(
+                  'VID',
+                  style: TextStyle(
+                    fontSize: 6.0,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.secondary,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    } else if (item.type == ResourceType.audio) {
+      return Container(
+        decoration: BoxDecoration(
+          color: const Color(0xFF1C1326),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: AppColors.accentAmber.withValues(alpha: 0.35),
+            width: 0.6,
+          ),
+        ),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _buildWaveformBar(8),
+                const SizedBox(width: 2),
+                _buildWaveformBar(14),
+                const SizedBox(width: 2),
+                _buildWaveformBar(20),
+                const SizedBox(width: 2),
+                _buildWaveformBar(12),
+                const SizedBox(width: 2),
+                _buildWaveformBar(6),
+              ],
+            ),
+            Positioned(
+              top: 2,
+              right: 2,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+                decoration: BoxDecoration(
+                  color: Colors.black87,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+                child: const Text(
+                  'AUD',
+                  style: TextStyle(
+                    fontSize: 6.0,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.accentAmber,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return _buildFallbackIconThumbnail(item);
+  }
+
+  Widget _buildWaveformBar(double height) {
+    return Container(
+      width: 2.5,
+      height: height,
+      decoration: BoxDecoration(
+        color: AppColors.accentAmber.withValues(alpha: 0.8),
+        borderRadius: BorderRadius.circular(1.5),
+      ),
+    );
+  }
+
+  Widget _buildFallbackIconThumbnail(ResourceItem item) {
+    return Container(
+      decoration: BoxDecoration(
+        color: item.accentColor.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: item.accentColor.withValues(alpha: 0.3),
+          width: 0.6,
+        ),
+      ),
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Icon(item.icon, size: 20, color: item.accentColor),
+          Positioned(
+            top: 2,
+            right: 2,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+              decoration: BoxDecoration(
+                color: Colors.black54,
+                borderRadius: BorderRadius.circular(3),
+              ),
+              child: Text(
+                item.extension.toUpperCase().replaceAll('.', ''),
+                style: TextStyle(
+                  fontSize: 6.0,
+                  fontWeight: FontWeight.bold,
+                  color: item.accentColor,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

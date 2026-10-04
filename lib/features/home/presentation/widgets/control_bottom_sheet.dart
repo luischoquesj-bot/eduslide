@@ -19,6 +19,12 @@ class ControlBottomSheet extends StatefulWidget {
   final ValueChanged<ScreenDistributionMode> onLayoutChanged;
   final bool isRemoteConnected;
   final ValueChanged<bool> onRemoteToggled;
+  final double currentSplitRatio;
+  final ValueChanged<double>? onSplitRatioChanged;
+  final bool isResourceOnLeft;
+  final ValueChanged<bool>? onResourceSideChanged;
+  final bool hasActiveResource;
+  final VoidCallback? onCloseResource;
 
   const ControlBottomSheet({
     super.key,
@@ -26,6 +32,12 @@ class ControlBottomSheet extends StatefulWidget {
     required this.onLayoutChanged,
     required this.isRemoteConnected,
     required this.onRemoteToggled,
+    this.currentSplitRatio = 0.5,
+    this.onSplitRatioChanged,
+    this.isResourceOnLeft = false,
+    this.onResourceSideChanged,
+    this.hasActiveResource = false,
+    this.onCloseResource,
   });
 
   static Future<void> show(
@@ -34,6 +46,12 @@ class ControlBottomSheet extends StatefulWidget {
     required ValueChanged<ScreenDistributionMode> onLayoutChanged,
     required bool isRemoteConnected,
     required ValueChanged<bool> onRemoteToggled,
+    double currentSplitRatio = 0.5,
+    ValueChanged<double>? onSplitRatioChanged,
+    bool isResourceOnLeft = false,
+    ValueChanged<bool>? onResourceSideChanged,
+    bool hasActiveResource = false,
+    VoidCallback? onCloseResource,
   }) {
     return showModalBottomSheet(
       context: context,
@@ -44,6 +62,12 @@ class ControlBottomSheet extends StatefulWidget {
         onLayoutChanged: onLayoutChanged,
         isRemoteConnected: isRemoteConnected,
         onRemoteToggled: onRemoteToggled,
+        currentSplitRatio: currentSplitRatio,
+        onSplitRatioChanged: onSplitRatioChanged,
+        isResourceOnLeft: isResourceOnLeft,
+        onResourceSideChanged: onResourceSideChanged,
+        hasActiveResource: hasActiveResource,
+        onCloseResource: onCloseResource,
       ),
     );
   }
@@ -55,12 +79,16 @@ class ControlBottomSheet extends StatefulWidget {
 class _ControlBottomSheetState extends State<ControlBottomSheet> {
   late ScreenDistributionMode _selectedLayout;
   late bool _remoteConnected;
+  late double _selectedRatio;
+  late bool _resourceOnLeft;
 
   @override
   void initState() {
     super.initState();
     _selectedLayout = widget.currentLayout;
     _remoteConnected = widget.isRemoteConnected;
+    _selectedRatio = widget.currentSplitRatio;
+    _resourceOnLeft = widget.isResourceOnLeft;
   }
 
   @override
@@ -180,6 +208,12 @@ class _ControlBottomSheetState extends State<ControlBottomSheet> {
                     // Selector de distribución de pantalla
                     _buildLayoutSelector(screenWidth, screenHeight),
                     SizedBox(height: verticalSpacing),
+
+                    // Configuración del recurso activo (100%, 75%, 50% y lado Izq/Der)
+                    if (widget.hasActiveResource) ...[
+                      _buildResourceConfiguration(screenWidth, screenHeight),
+                      SizedBox(height: verticalSpacing * 0.5),
+                    ],
 
                     // Tarjeta de Conexión de Mando (EduSlide Control)
                     _buildRemoteControlOption(screenWidth, screenHeight),
@@ -356,6 +390,209 @@ class _ControlBottomSheetState extends State<ControlBottomSheet> {
           }).toList(),
         );
       },
+    );
+  }
+
+  /// Configuración visual del recurso didáctico (100%, 75%, 50% y lado Izq/Der)
+  Widget _buildResourceConfiguration(double screenWidth, double screenHeight) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceLight.withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.35), width: 1.0),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.aspect_ratio_rounded, size: 16, color: AppColors.primary),
+              const SizedBox(width: 6),
+              Text(
+                'Tamaño del Recurso Activo',
+                style: AppTextStyles.cardTitle.copyWith(
+                  fontSize: (screenHeight * 0.026).clamp(12.0, 14.0),
+                ),
+              ),
+              const Spacer(),
+              if (widget.onCloseResource != null)
+                InkWell(
+                  onTap: () {
+                    widget.onCloseResource?.call();
+                    Navigator.of(context).pop();
+                  },
+                  borderRadius: BorderRadius.circular(6),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppColors.accentRose.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.close_rounded, size: 12, color: AppColors.accentRose),
+                        SizedBox(width: 3),
+                        Text(
+                          'Cerrar Recurso',
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.accentRose,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          // Botones de 100%, 75%, 50%
+          Row(
+            children: [
+              Expanded(
+                child: _buildRatioCard(
+                  title: '100% Pantalla',
+                  subtitle: 'Ocupa todo el centro',
+                  ratio: 1.0,
+                  icon: Icons.fullscreen_rounded,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: _buildRatioCard(
+                  title: '75% Prioritario',
+                  subtitle: '75% Recurso / 25% Pizarra',
+                  ratio: 0.75,
+                  icon: Icons.view_sidebar_rounded,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: _buildRatioCard(
+                  title: '50% Dividido',
+                  subtitle: '50% Recurso / 50% Pizarra',
+                  ratio: 0.50,
+                  icon: Icons.vertical_split_rounded,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          // Selector de Lado (Izquierda / Derecha)
+          Row(
+            children: [
+              const Text(
+                'Posición del recurso:',
+                style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+              ),
+              const SizedBox(width: 8),
+              _buildSideChip(label: 'Izquierda', isLeft: true),
+              const SizedBox(width: 6),
+              _buildSideChip(label: 'Derecha', isLeft: false),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRatioCard({
+    required String title,
+    required String subtitle,
+    required double ratio,
+    required IconData icon,
+  }) {
+    final isSelected = (_selectedRatio - ratio).abs() < 0.05;
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _selectedRatio = ratio;
+        });
+        widget.onSplitRatioChanged?.call(ratio);
+        Navigator.of(context).pop();
+      },
+      borderRadius: BorderRadius.circular(10),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? AppColors.primary.withValues(alpha: 0.2)
+              : AppColors.surfaceElevated.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: isSelected ? AppColors.primary : AppColors.borderSubtle,
+            width: isSelected ? 1.5 : 0.8,
+          ),
+        ),
+        child: Column(
+          children: [
+            Icon(
+              icon,
+              size: 20,
+              color: isSelected ? AppColors.primary : AppColors.textSecondary,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                color: isSelected ? AppColors.textPrimary : AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 1),
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 8.0,
+                color: isSelected ? AppColors.primary : AppColors.textMuted,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSideChip({required String label, required bool isLeft}) {
+    final isSelected = _resourceOnLeft == isLeft;
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _resourceOnLeft = isLeft;
+        });
+        widget.onResourceSideChanged?.call(isLeft);
+      },
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.primary : AppColors.surfaceElevated,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: isSelected ? AppColors.primary : AppColors.borderSubtle,
+            width: 0.8,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            color: isSelected ? Colors.white : AppColors.textSecondary,
+          ),
+        ),
+      ),
     );
   }
 

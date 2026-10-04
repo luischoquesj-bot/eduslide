@@ -8,6 +8,7 @@ import '../../../explorer/domain/models/topic_folder.dart';
 import '../../../explorer/presentation/widgets/folder_picker_dialog.dart';
 import '../../../explorer/presentation/widgets/storage_source_dialog.dart';
 import '../../../explorer/presentation/widgets/topic_selector_dialog.dart';
+import '../../../media_viewers/presentation/widgets/interactive_resource_viewer.dart';
 import '../../../media_viewers/presentation/widgets/left_media_carousel.dart';
 import '../../../media_viewers/presentation/widgets/right_media_carousel.dart';
 import '../../../whiteboard/presentation/widgets/whiteboard_canvas.dart';
@@ -35,8 +36,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   ResourceItem? _selectedResource;
   bool _hasUsbDetected = false;
 
-  // Estado de distribución de pantalla
+  // Estado de distribución de pantalla y proporción del recurso activo
   ScreenDistributionMode _layoutMode = ScreenDistributionMode.standard801010;
+  double _resourceSplitRatio = 0.50; // 0.50 (50%), 0.75 (75%), 1.00 (100%)
+  bool _isResourceOnLeft = false; // false = derecha de la pizarra, true = izquierda de la pizarra
 
   // Estado del mando remoto
   bool _isRemoteConnected = false;
@@ -184,26 +187,11 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     setState(() {
       _selectedResource = item;
       _activeMediaTitle = item.name;
+      // Si la pizarra estaba ocupando el 100% libre, cambia a estándar para mostrar el recurso junto al espacio
+      if (_layoutMode == ScreenDistributionMode.full100) {
+        _layoutMode = ScreenDistributionMode.standard801010;
+      }
     });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            Icon(item.icon, color: item.accentColor, size: 18),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'Cargado: ${item.name} (${item.formattedSize})',
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        ),
-        duration: const Duration(milliseconds: 1400),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
   }
 
   @override
@@ -368,49 +356,45 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 
     switch (_layoutMode) {
       case ScreenDistributionMode.full100:
-        return const Padding(
-          padding: EdgeInsets.all(1.5),
-          child: WhiteboardCanvas(isStandalone: true),
+        return Padding(
+          padding: const EdgeInsets.all(1.5),
+          child: _selectedResource != null
+              ? InteractiveResourceViewer(
+                  resource: _selectedResource!,
+                  currentRatio: 1.0,
+                  isResourceOnLeft: _isResourceOnLeft,
+                  onClose: () {
+                    setState(() {
+                      _selectedResource = null;
+                    });
+                  },
+                  onRatioChanged: (ratio) {
+                    setState(() {
+                      _resourceSplitRatio = ratio;
+                      if (ratio < 0.95) {
+                        _layoutMode = ScreenDistributionMode.standard801010;
+                      }
+                    });
+                  },
+                  onSideToggle: (onLeft) {
+                    setState(() {
+                      _isResourceOnLeft = onLeft;
+                    });
+                  },
+                )
+              : const WhiteboardCanvas(isStandalone: true),
         );
 
       case ScreenDistributionMode.split5050:
         return Padding(
           padding: const EdgeInsets.all(1.5),
-          child: Row(
-            children: [
-              const Expanded(
-                flex: 50,
-                child: WhiteboardCanvas(),
-              ),
-              const SizedBox(width: 3),
-              Expanded(
-                flex: 50,
-                child: _buildSplitResourceView(),
-              ),
-            ],
-          ),
+          child: _buildSplitLayout(resourceFlex: 50, whiteboardFlex: 50),
         );
 
       case ScreenDistributionMode.split7525:
         return Padding(
           padding: const EdgeInsets.all(1.5),
-          child: Row(
-            children: [
-              const Expanded(
-                flex: 75,
-                child: WhiteboardCanvas(),
-              ),
-              const SizedBox(width: 3),
-              Expanded(
-                flex: 25,
-                child: LeftMediaCarousel(
-                  resources: leftResources,
-                  onResourceTap: _onResourceSelected,
-                  onOpenTopicSelector: () => _openFolderPickerDialog(),
-                ),
-              ),
-            ],
-          ),
+          child: _buildSplitLayout(resourceFlex: 75, whiteboardFlex: 25),
         );
 
       case ScreenDistributionMode.standard801010:
@@ -429,13 +413,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                 ),
               ),
 
-              // 2. Área Central: Pizarra
-              const Expanded(
+              // 2. Área Central: Espacio de trabajo interactivo adaptable (Pizarra + Recurso cargado)
+              Expanded(
                 flex: 80,
-                child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 2.0),
-                  child: WhiteboardCanvas(),
-                ),
+                child: _buildCenterWorkspace(),
               ),
 
               // 3. Carrusel lateral derecho (Imágenes, Videos y Audios)
@@ -451,6 +432,122 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           ),
         );
     }
+  }
+
+  /// Área central del modo estándar: muestra la pizarra completa si no hay recurso seleccionado,
+  /// o divide la pantalla entre el recurso activo (interactivo y real) y la pizarra según el porcentaje elegido.
+  Widget _buildCenterWorkspace() {
+    if (_selectedResource == null) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 2.0),
+        child: WhiteboardCanvas(),
+      );
+    }
+
+    final viewer = InteractiveResourceViewer(
+      resource: _selectedResource!,
+      currentRatio: _resourceSplitRatio,
+      isResourceOnLeft: _isResourceOnLeft,
+      onClose: () {
+        setState(() {
+          _selectedResource = null;
+        });
+      },
+      onRatioChanged: (ratio) {
+        setState(() {
+          _resourceSplitRatio = ratio;
+        });
+      },
+      onSideToggle: (onLeft) {
+        setState(() {
+          _isResourceOnLeft = onLeft;
+        });
+      },
+    );
+
+    if (_resourceSplitRatio >= 0.95) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2.0),
+        child: viewer,
+      );
+    }
+
+    final int resourceFlex = (_resourceSplitRatio * 100).toInt().clamp(20, 80);
+    final int whiteboardFlex = 100 - resourceFlex;
+
+    final resourceWidget = Expanded(
+      flex: resourceFlex,
+      child: viewer,
+    );
+
+    final whiteboardWidget = const Expanded(
+      flex: 100,
+      child: WhiteboardCanvas(),
+    );
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: _isResourceOnLeft
+            ? [resourceWidget, const SizedBox(width: 4), Expanded(flex: whiteboardFlex, child: whiteboardWidget)]
+            : [Expanded(flex: whiteboardFlex, child: whiteboardWidget), const SizedBox(width: 4), resourceWidget],
+      ),
+    );
+  }
+
+  /// Distribución dividida proporcional para modos 50/50 y 75/25
+  Widget _buildSplitLayout({required int resourceFlex, required int whiteboardFlex}) {
+    if (_selectedResource == null) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            flex: whiteboardFlex,
+            child: const WhiteboardCanvas(),
+          ),
+          const SizedBox(width: 3),
+          Expanded(
+            flex: resourceFlex,
+            child: _buildSplitResourceView(),
+          ),
+        ],
+      );
+    }
+
+    final viewer = InteractiveResourceViewer(
+      resource: _selectedResource!,
+      currentRatio: resourceFlex / (resourceFlex + whiteboardFlex),
+      isResourceOnLeft: _isResourceOnLeft,
+      onClose: () {
+        setState(() {
+          _selectedResource = null;
+        });
+      },
+      onRatioChanged: (ratio) {
+        setState(() {
+          _resourceSplitRatio = ratio;
+          if (ratio >= 0.95) {
+            _layoutMode = ScreenDistributionMode.full100;
+          }
+        });
+      },
+      onSideToggle: (onLeft) {
+        setState(() {
+          _isResourceOnLeft = onLeft;
+        });
+      },
+    );
+
+    final resourceWidget = Expanded(flex: resourceFlex, child: viewer);
+    final whiteboardWidget = const Expanded(flex: 100, child: WhiteboardCanvas());
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: _isResourceOnLeft
+          ? [resourceWidget, const SizedBox(width: 4), Expanded(flex: whiteboardFlex, child: whiteboardWidget)]
+          : [Expanded(flex: whiteboardFlex, child: whiteboardWidget), const SizedBox(width: 4), resourceWidget],
+    );
   }
 
   /// Vista complementaria para el modo 50/50 con previsualización del recurso activo
@@ -658,6 +755,29 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       onRemoteToggled: (connected) {
         setState(() {
           _isRemoteConnected = connected;
+        });
+      },
+      currentSplitRatio: _resourceSplitRatio,
+      onSplitRatioChanged: (ratio) {
+        setState(() {
+          _resourceSplitRatio = ratio;
+          if (ratio >= 0.95 && _layoutMode == ScreenDistributionMode.full100) {
+            // Se mantiene en pantalla completa
+          } else if (_layoutMode == ScreenDistributionMode.full100 && ratio < 0.95) {
+            _layoutMode = ScreenDistributionMode.standard801010;
+          }
+        });
+      },
+      isResourceOnLeft: _isResourceOnLeft,
+      onResourceSideChanged: (onLeft) {
+        setState(() {
+          _isResourceOnLeft = onLeft;
+        });
+      },
+      hasActiveResource: _selectedResource != null,
+      onCloseResource: () {
+        setState(() {
+          _selectedResource = null;
         });
       },
     );
