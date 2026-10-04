@@ -36,6 +36,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   // Recurso del carrusel derecho cargado en nuevo lienzo encima de la pizarra (Requisito 1)
   ResourceItem? _whiteboardOverlayResource;
   final GlobalKey _whiteboardKey = GlobalKey();
+  final GlobalKey _mainResourceViewerKey = GlobalKey();
+  final GlobalKey _overlayResourceViewerKey = GlobalKey();
 
   // Estado de distribución de pantalla y proporción del recurso activo
   ScreenDistributionMode _layoutMode = ScreenDistributionMode.standard801010;
@@ -188,6 +190,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         if (_whiteboardOverlayResource != null)
           Positioned.fill(
             child: InteractiveResourceViewer(
+              key: _overlayResourceViewerKey,
               resource: _whiteboardOverlayResource!,
               currentRatio: 1.0,
               showLayoutControls: false,
@@ -199,6 +202,43 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
             ),
           ),
       ],
+    );
+  }
+
+  /// Construye el visor principal preservando su estado (reproducción, segundo exacto, página de PDF, zoom)
+  /// mediante una GlobalKey persistente al cambiar de porcentaje (50%, 75%, 100%) o distribución de pantalla.
+  Widget _buildMainResourceViewer({required double currentRatio}) {
+    if (_selectedResource == null) return const SizedBox.shrink();
+
+    return InteractiveResourceViewer(
+      key: _mainResourceViewerKey,
+      resource: _selectedResource!,
+      currentRatio: currentRatio,
+      isResourceOnLeft: _isResourceOnLeft,
+      onClose: () {
+        setState(() {
+          _selectedResource = null;
+        });
+      },
+      onRatioChanged: (ratio) {
+        setState(() {
+          _resourceSplitRatio = ratio;
+          if (ratio >= 0.95) {
+            _layoutMode = ScreenDistributionMode.full100;
+          } else if ((ratio - 0.50).abs() < 0.05) {
+            _layoutMode = ScreenDistributionMode.split5050;
+          } else if ((ratio - 0.75).abs() < 0.05) {
+            _layoutMode = ScreenDistributionMode.split7525;
+          } else {
+            _layoutMode = ScreenDistributionMode.standard801010;
+          }
+        });
+      },
+      onSideToggle: (onLeft) {
+        setState(() {
+          _isResourceOnLeft = onLeft;
+        });
+      },
     );
   }
 
@@ -248,39 +288,6 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                 child: _buildFloatingControlPill(),
               ),
             ),
-
-            // 4. Atajo flotante discreto en esquina superior derecha para reabrir bienvenida
-            if (!_showWelcomeCard)
-              Positioned(
-                top: 6,
-                right: 6,
-                child: Tooltip(
-                  message: 'Mostrar Inicio / Bienvenida',
-                  child: InkWell(
-                    onTap: () {
-                      setState(() {
-                        _showWelcomeCard = true;
-                      });
-                    },
-                    borderRadius: BorderRadius.circular(16),
-                    child: Container(
-                      padding: const EdgeInsets.all(5),
-                      decoration: BoxDecoration(
-                        color: AppColors.surface.withValues(alpha: 0.7),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: AppColors.borderSubtle.withValues(alpha: 0.6),
-                        ),
-                      ),
-                      child: const Icon(
-                        Icons.help_outline_rounded,
-                        size: 15,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
           ],
         ),
       ),
@@ -297,29 +304,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         return Padding(
           padding: const EdgeInsets.all(1.5),
           child: _selectedResource != null
-              ? InteractiveResourceViewer(
-                  resource: _selectedResource!,
-                  currentRatio: 1.0,
-                  isResourceOnLeft: _isResourceOnLeft,
-                  onClose: () {
-                    setState(() {
-                      _selectedResource = null;
-                    });
-                  },
-                  onRatioChanged: (ratio) {
-                    setState(() {
-                      _resourceSplitRatio = ratio;
-                      if (ratio < 0.95) {
-                        _layoutMode = ScreenDistributionMode.standard801010;
-                      }
-                    });
-                  },
-                  onSideToggle: (onLeft) {
-                    setState(() {
-                      _isResourceOnLeft = onLeft;
-                    });
-                  },
-                )
+              ? _buildMainResourceViewer(currentRatio: 1.0)
               : _buildWhiteboardArea(isStandalone: true),
         );
 
@@ -383,26 +368,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       );
     }
 
-    final viewer = InteractiveResourceViewer(
-      resource: _selectedResource!,
-      currentRatio: _resourceSplitRatio,
-      isResourceOnLeft: _isResourceOnLeft,
-      onClose: () {
-        setState(() {
-          _selectedResource = null;
-        });
-      },
-      onRatioChanged: (ratio) {
-        setState(() {
-          _resourceSplitRatio = ratio;
-        });
-      },
-      onSideToggle: (onLeft) {
-        setState(() {
-          _isResourceOnLeft = onLeft;
-        });
-      },
-    );
+    final viewer = _buildMainResourceViewer(currentRatio: _resourceSplitRatio);
 
     if (_resourceSplitRatio >= 0.95) {
       return Padding(
@@ -454,28 +420,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       );
     }
 
-    final viewer = InteractiveResourceViewer(
-      resource: _selectedResource!,
+    final viewer = _buildMainResourceViewer(
       currentRatio: resourceFlex / (resourceFlex + whiteboardFlex),
-      isResourceOnLeft: _isResourceOnLeft,
-      onClose: () {
-        setState(() {
-          _selectedResource = null;
-        });
-      },
-      onRatioChanged: (ratio) {
-        setState(() {
-          _resourceSplitRatio = ratio;
-          if (ratio >= 0.95) {
-            _layoutMode = ScreenDistributionMode.full100;
-          }
-        });
-      },
-      onSideToggle: (onLeft) {
-        setState(() {
-          _isResourceOnLeft = onLeft;
-        });
-      },
     );
 
     final resourceWidget = Expanded(flex: resourceFlex, child: viewer);
