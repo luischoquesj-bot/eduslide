@@ -8,7 +8,6 @@ environment:
 
 dependencies:
   archive: ^4.3.0
-  audioplayers: ^6.8.1
   flutter:
     sdk: flutter
   flutter_pdfview: ^1.4.5

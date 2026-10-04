@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:archive/archive.dart';
-import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_pdfview/flutter_pdfview.dart';
 import 'package:video_player/video_player.dart';
@@ -14,7 +13,7 @@ import '../../../explorer/domain/models/resource_item.dart';
 /// 1. Imágenes: Visualización a pantalla completa sin marcos restrictivos, con InteractiveViewer y zoom infinito.
 /// 2. PDFs: Lector nativo real de archivos PDF mediante flutter_pdfview con navegación de páginas.
 /// 3. Videos: Reproductor nativo real de video mediante video_player con scrubber, velocidad y volumen.
-/// 4. Audios: Reproductor nativo real de audio mediante audioplayers con visualizador de ondas sonoras.
+/// 4. Audios: Reproductor nativo real de audio mediante ExoPlayer (video_player) con visualizador de ondas sonoras.
 /// 5. Documentos .docx: Extracción y renderizado de texto real de archivos de Word (.docx) mediante archive.
 class InteractiveResourceViewer extends StatefulWidget {
   final ResourceItem resource;
@@ -56,11 +55,9 @@ class _InteractiveResourceViewerState extends State<InteractiveResourceViewer>
   VideoPlayerController? _videoController;
   bool _isVideoInitialized = false;
 
-  // Reproductor de Audio real
-  AudioPlayer? _audioPlayer;
-  Duration _audioPosition = Duration.zero;
-  Duration _audioDuration = Duration.zero;
-  PlayerState _audioPlayerState = PlayerState.stopped;
+  // Reproductor de Audio real (ExoPlayer nativo)
+  VideoPlayerController? _audioController;
+  bool _isAudioInitialized = false;
 
   // Extracción de texto de documentos .docx
   List<String> _docxParagraphs = [];
@@ -105,10 +102,9 @@ class _InteractiveResourceViewerState extends State<InteractiveResourceViewer>
     _videoController = null;
     _isVideoInitialized = false;
 
-    _audioPlayer?.stop();
-    _audioPlayer?.dispose();
-    _audioPlayer = null;
-    _audioPlayerState = PlayerState.stopped;
+    _audioController?.dispose();
+    _audioController = null;
+    _isAudioInitialized = false;
 
     _docxParagraphs = [];
     _isDocxLoaded = false;
@@ -141,22 +137,22 @@ class _InteractiveResourceViewerState extends State<InteractiveResourceViewer>
         }
       });
     } else if (item.type == ResourceType.audio && exists) {
-      _audioPlayer = AudioPlayer();
+      _audioController = VideoPlayerController.file(file)
+        ..initialize().then((_) {
+          if (mounted) {
+            setState(() {
+              _isAudioInitialized = true;
+            });
+            _audioController!.play();
+          }
+        }).catchError((error) {
+          debugPrint('Error inicializando audio: $error');
+        });
 
-      _audioPlayer!.onPositionChanged.listen((pos) {
-        if (mounted) setState(() => _audioPosition = pos);
-      });
-
-      _audioPlayer!.onDurationChanged.listen((dur) {
-        if (mounted) setState(() => _audioDuration = dur);
-      });
-
-      _audioPlayer!.onPlayerStateChanged.listen((state) {
-        if (mounted) setState(() => _audioPlayerState = state);
-      });
-
-      _audioPlayer!.play(DeviceFileSource(file.path)).catchError((e) {
-        debugPrint('Error reproduciendo audio: $e');
+      _audioController!.addListener(() {
+        if (mounted) {
+          setState(() {});
+        }
       });
     } else if (item.extension.toLowerCase().contains('doc') && exists) {
       _loadDocxContent(file);
@@ -798,7 +794,10 @@ class _InteractiveResourceViewerState extends State<InteractiveResourceViewer>
 
   /// 3. REPRODUCTOR REAL DE AUDIO (Requisito 4)
   Widget _buildAudioPlayer(ResourceItem item) {
-    final bool isPlaying = _audioPlayerState == PlayerState.playing;
+    final bool hasController = _audioController != null && _isAudioInitialized;
+    final bool isPlaying = hasController && _audioController!.value.isPlaying;
+    final Duration audioPos = hasController ? _audioController!.value.position : Duration.zero;
+    final Duration audioDur = hasController ? _audioController!.value.duration : Duration.zero;
 
     return Container(
       decoration: const BoxDecoration(
@@ -911,15 +910,15 @@ class _InteractiveResourceViewerState extends State<InteractiveResourceViewer>
                         thumbColor: AppColors.accentAmber,
                       ),
                       child: Slider(
-                        value: _audioPosition.inSeconds
+                        value: audioPos.inSeconds
                             .toDouble()
-                            .clamp(0.0, _audioDuration.inSeconds.toDouble()),
+                            .clamp(0.0, audioDur.inSeconds.toDouble() > 0 ? audioDur.inSeconds.toDouble() : 1.0),
                         min: 0.0,
-                        max: _audioDuration.inSeconds.toDouble() > 0
-                            ? _audioDuration.inSeconds.toDouble()
+                        max: audioDur.inSeconds.toDouble() > 0
+                            ? audioDur.inSeconds.toDouble()
                             : 1.0,
                         onChanged: (val) {
-                          _audioPlayer?.seek(Duration(seconds: val.toInt()));
+                          _audioController?.seekTo(Duration(seconds: val.toInt()));
                         },
                       ),
                     ),
@@ -929,11 +928,11 @@ class _InteractiveResourceViewerState extends State<InteractiveResourceViewer>
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
-                            _formatDuration(_audioPosition),
+                            _formatDuration(audioPos),
                             style: const TextStyle(fontSize: 10, color: AppColors.textMuted),
                           ),
                           Text(
-                            _formatDuration(_audioDuration),
+                            _formatDuration(audioDur),
                             style: const TextStyle(fontSize: 10, color: AppColors.textMuted),
                           ),
                         ],
@@ -951,22 +950,24 @@ class _InteractiveResourceViewerState extends State<InteractiveResourceViewer>
                   IconButton(
                     icon: const Icon(Icons.replay_10_rounded, size: 22),
                     onPressed: () {
-                      final newPos = _audioPosition - const Duration(seconds: 10);
-                      _audioPlayer?.seek(newPos > Duration.zero ? newPos : Duration.zero);
+                      final newPos = audioPos - const Duration(seconds: 10);
+                      _audioController?.seekTo(newPos > Duration.zero ? newPos : Duration.zero);
                     },
                   ),
                   const SizedBox(width: 8),
                   InkWell(
                     onTap: () {
-                      if (_audioPlayer == null) {
+                      if (_audioController == null) {
                         _initResourceEngines();
                         return;
                       }
-                      if (isPlaying) {
-                        _audioPlayer!.pause();
-                      } else {
-                        _audioPlayer!.resume();
-                      }
+                      setState(() {
+                        if (isPlaying) {
+                          _audioController!.pause();
+                        } else {
+                          _audioController!.play();
+                        }
+                      });
                     },
                     borderRadius: BorderRadius.circular(30),
                     child: Container(
@@ -992,8 +993,29 @@ class _InteractiveResourceViewerState extends State<InteractiveResourceViewer>
                   IconButton(
                     icon: const Icon(Icons.forward_10_rounded, size: 22),
                     onPressed: () {
-                      final newPos = _audioPosition + const Duration(seconds: 10);
-                      _audioPlayer?.seek(newPos);
+                      final newPos = audioPos + const Duration(seconds: 10);
+                      _audioController?.seekTo(newPos);
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    icon: Icon(
+                      hasController && _audioController!.value.volume > 0
+                          ? Icons.volume_up_rounded
+                          : Icons.volume_off_rounded,
+                      size: 20,
+                      color: AppColors.accentAmber,
+                    ),
+                    onPressed: () {
+                      if (hasController) {
+                        setState(() {
+                          if (_audioController!.value.volume > 0) {
+                            _audioController!.setVolume(0.0);
+                          } else {
+                            _audioController!.setVolume(1.0);
+                          }
+                        });
+                      }
                     },
                   ),
                 ],
