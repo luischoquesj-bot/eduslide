@@ -13,6 +13,8 @@ import 'package:xml/xml.dart';
 ///
 /// REGLAS:
 /// - Lectura estrictamente de solo lectura (Read-Only). Jamás modifica el archivo original.
+/// - CERO etiquetas, marcas de agua o cabeceras artificiales inyectadas sobre el documento.
+/// - Preservación fiel del orden de elementos: textos, tablas con columnas reales e imágenes en línea.
 /// - Los PDFs generados residen exclusivamente en el directorio temporal (caché).
 /// - Si el PDF ya está en caché y el archivo no cambió, la apertura es inmediata (0 ms).
 class DocumentConverterService {
@@ -35,7 +37,6 @@ class DocumentConverterService {
     try {
       final stat = file.statSync();
       final rawKey = '${file.path}_${stat.size}_${stat.modified.millisecondsSinceEpoch}';
-      // Generar un hash numérico positivo simple y seguro para nombre de archivo
       var hash = 0;
       for (var i = 0; i < rawKey.length; i++) {
         hash = (31 * hash + rawKey.codeUnitAt(i)) & 0x7FFFFFFF;
@@ -48,7 +49,7 @@ class DocumentConverterService {
     }
   }
 
-  /// Retorna la ruta al PDF en caché si ya existe, de lo contrario convierte el documento y lo guarda.
+  /// Retorna la ruta al PDF en caché si ya existe, de lo contrario convierte el documento fielmente y lo guarda.
   Future<String> getOrConvertDocumentToPdf(String filePath) async {
     final sourceFile = File(filePath);
     if (!await sourceFile.exists()) {
@@ -59,13 +60,13 @@ class DocumentConverterService {
     final cacheKey = _generateCacheKey(sourceFile);
     final cachedPdfFile = File(p.join(cacheDir.path, cacheKey));
 
-    // Si ya existe en caché con tamaño válido, devolver inmediatamente
+    // Si ya existe en caché con tamaño válido, devolver inmediatamente (0 ms)
     if (await cachedPdfFile.exists() && (await cachedPdfFile.length()) > 0) {
       debugPrint('[DocumentConverter] Cache hit: ${cachedPdfFile.path}');
       return cachedPdfFile.path;
     }
 
-    debugPrint('[DocumentConverter] Convirtiendo archivo a PDF: $filePath');
+    debugPrint('[DocumentConverter] Convirtiendo archivo a PDF limpio: $filePath');
     final ext = p.extension(filePath).toLowerCase();
 
     // Lectura de bytes en modo sólo lectura (Read-Only)
@@ -75,178 +76,117 @@ class DocumentConverterService {
     final fileName = p.basename(filePath);
 
     if (ext == '.docx') {
-      _convertDocxToPdf(pdf, bytes, fileName);
+      _convertDocxToPdf(pdf, bytes);
     } else if (ext == '.xlsx') {
-      _convertXlsxToPdf(pdf, bytes, fileName);
+      _convertXlsxToPdf(pdf, bytes);
     } else if (ext == '.pptx') {
-      _convertPptxToPdf(pdf, bytes, fileName);
+      _convertPptxToPdf(pdf, bytes);
     } else if (ext == '.doc' || ext == '.xls' || ext == '.ppt') {
-      _convertLegacyOfficeToPdf(pdf, bytes, fileName, ext);
+      _convertLegacyOfficeToPdf(pdf, bytes);
     } else {
       _convertGenericTextToPdf(pdf, bytes, fileName);
     }
 
     final pdfBytes = await pdf.save();
     await cachedPdfFile.writeAsBytes(pdfBytes, flush: true);
-    debugPrint('[DocumentConverter] PDF guardado en caché: ${cachedPdfFile.path}');
+    debugPrint('[DocumentConverter] PDF limpio guardado en caché: ${cachedPdfFile.path}');
 
     return cachedPdfFile.path;
   }
 
   // ===========================================================================
-  // 1. CONVERSIÓN DE WORD (.DOCX) A PDF CON FORMATO Y TABLAS
+  // 1. CONVERSIÓN DE WORD (.DOCX) A PDF CON ALTA FIDELIDAD Y LIMPIO
   // ===========================================================================
-  void _convertDocxToPdf(pw.Document pdf, Uint8List bytes, String fileName) {
+  void _convertDocxToPdf(pw.Document pdf, List<int> bytes) {
     try {
       final archive = ZipDecoder().decodeBytes(bytes);
       final documentXmlFile = archive.findFile('word/document.xml');
 
       if (documentXmlFile == null) {
-        _convertGenericTextToPdf(pdf, bytes, fileName);
+        _convertGenericTextToPdf(pdf, bytes, 'Documento');
         return;
       }
 
       final xmlContent = utf8.decode(documentXmlFile.content as List<int>, allowMalformed: true);
       final documentXml = XmlDocument.parse(xmlContent);
 
-      // Extraer imágenes incrustadas en word/media/
-      final imagesMap = <String, Uint8List>{};
+      // 1. Mapear relaciones de imágenes desde word/_rels/document.xml.rels
+      final relsFile = archive.findFile('word/_rels/document.xml.rels');
+      final imageRelMap = <String, String>{}; // rId -> path dentro del zip
+
+      if (relsFile != null) {
+        try {
+          final relsXml = utf8.decode(relsFile.content as List<int>, allowMalformed: true);
+          final relsDoc = XmlDocument.parse(relsXml);
+          for (final rel in relsDoc.findAllElements('Relationship')) {
+            final id = rel.getAttribute('Id');
+            final target = rel.getAttribute('Target');
+            final type = rel.getAttribute('Type') ?? '';
+            if (id != null && target != null && type.contains('image')) {
+              var targetPath = target;
+              if (!targetPath.startsWith('word/')) {
+                targetPath = 'word/$targetPath';
+              }
+              imageRelMap[id] = targetPath;
+            }
+          }
+        } catch (e) {
+          debugPrint('[DocumentConverter] Error leyendo rels: $e');
+        }
+      }
+
+      // 2. Extraer bytes de imágenes del ZIP
+      final imagesData = <String, Uint8List>{};
       for (final file in archive.files) {
         if (file.isFile && file.name.startsWith('word/media/')) {
-          final imgName = p.basename(file.name);
-          imagesMap[imgName] = Uint8List.fromList(file.content as List<int>);
+          imagesData[file.name] = Uint8List.fromList(file.content as List<int>);
         }
       }
 
       final body = documentXml.findAllElements('w:body').firstOrNull;
       if (body == null) {
-        _convertGenericTextToPdf(pdf, bytes, fileName);
+        _convertGenericTextToPdf(pdf, bytes, 'Documento');
         return;
       }
 
       final widgets = <pw.Widget>[];
 
-      // Cabecera institucional del documento Word
-      widgets.add(
-        pw.Container(
-          padding: const pw.EdgeInsets.all(12),
-          margin: const pw.EdgeInsets.only(bottom: 16),
-          decoration: pw.BoxDecoration(
-            color: PdfColor.fromHex('EAF0F9'),
-            borderRadius: pw.BorderRadius.circular(6),
-            border: pw.Border.all(color: PdfColor.fromHex('185ABD'), width: 1.5),
-          ),
-          child: pw.Row(
-            children: [
-              pw.Container(
-                padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: pw.BoxDecoration(
-                  color: PdfColor.fromHex('185ABD'),
-                  borderRadius: pw.BorderRadius.circular(4),
-                ),
-                child: pw.Text(
-                  'DOCX',
-                  style: pw.TextStyle(
-                    color: PdfColors.white,
-                    fontWeight: pw.FontWeight.bold,
-                    fontSize: 11,
-                  ),
-                ),
-              ),
-              pw.SizedBox(width: 10),
-              pw.Expanded(
-                child: pw.Column(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    pw.Text(
-                      fileName,
-                      style: pw.TextStyle(
-                        fontWeight: pw.FontWeight.bold,
-                        fontSize: 14,
-                        color: PdfColor.fromHex('185ABD'),
-                      ),
-                    ),
-                    pw.Text(
-                      'Documento de Microsoft Word - EduSlide Proyección Didáctica',
-                      style: const pw.TextStyle(fontSize: 8.5, color: PdfColors.grey700),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-
-      // Iterar sobre los hijos directos del cuerpo (párrafos <w:p> y tablas <w:tbl>)
+      // Iterar sobre los hijos directos del cuerpo en orden secuencial estricto
       for (final child in body.children) {
         if (child is! XmlElement) continue;
 
         if (child.name.local == 'p') {
-          // Párrafo
-          final pWidget = _parseDocxParagraph(child);
+          final pWidget = _parseDocxParagraph(child, imageRelMap, imagesData);
           if (pWidget != null) widgets.add(pWidget);
         } else if (child.name.local == 'tbl') {
-          // Tabla
-          final tblWidget = _parseDocxTable(child);
+          final tblWidget = _parseDocxTable(child, imageRelMap, imagesData);
           if (tblWidget != null) widgets.add(tblWidget);
         }
       }
 
-      // Si hay imágenes en el documento que no se hayan vinculado en línea, agregarlas como galería
-      if (imagesMap.isNotEmpty) {
-        widgets.add(pw.SizedBox(height: 12));
-        widgets.add(
-          pw.Text(
-            'Imágenes y Gráficos del Documento:',
-            style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12, color: PdfColor.fromHex('185ABD')),
-          ),
-        );
-        widgets.add(pw.SizedBox(height: 8));
-
-        for (final entry in imagesMap.entries) {
-          try {
-            final image = pw.MemoryImage(entry.value);
-            widgets.add(
-              pw.Container(
-                margin: const pw.EdgeInsets.symmetric(vertical: 6),
-                alignment: pw.Alignment.center,
-                child: pw.ConstrainedBox(
-                  constraints: const pw.BoxConstraints(maxHeight: 280),
-                  child: pw.Image(image, fit: pw.BoxFit.contain),
-                ),
-              ),
-            );
-          } catch (_) {}
-        }
+      if (widgets.isEmpty) {
+        widgets.add(pw.Text('Documento vacío', style: const pw.TextStyle(color: PdfColors.grey)));
       }
 
       pdf.addPage(
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4,
-          margin: const pw.EdgeInsets.all(32),
-          footer: (context) => pw.Container(
-            alignment: pw.Alignment.centerRight,
-            margin: const pw.EdgeInsets.only(top: 10),
-            child: pw.Text(
-              'Página ${context.pageNumber} de ${context.pagesCount} - EduProjects BO',
-              style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600),
-            ),
-          ),
+          margin: const pw.EdgeInsets.symmetric(horizontal: 36, vertical: 36),
           build: (context) => widgets,
         ),
       );
     } catch (e) {
       debugPrint('[DocumentConverter] Error convirtiendo DOCX: $e');
-      _convertGenericTextToPdf(pdf, bytes, fileName);
+      _convertGenericTextToPdf(pdf, bytes, 'Documento');
     }
   }
 
-  pw.Widget? _parseDocxParagraph(XmlElement pElement) {
-    final runs = pElement.findAllElements('w:r');
-    final spans = <pw.InlineSpan>[];
-
-    // Detectar alineación del párrafo
+  pw.Widget? _parseDocxParagraph(
+    XmlElement pElement,
+    Map<String, String> imageRelMap,
+    Map<String, Uint8List> imagesData,
+  ) {
+    // 1. Alineación del párrafo
     pw.TextAlign align = pw.TextAlign.left;
     final jc = pElement.findAllElements('w:jc').firstOrNull;
     if (jc != null) {
@@ -256,17 +196,50 @@ class DocumentConverterService {
       if (val == 'both') align = pw.TextAlign.justify;
     }
 
-    // Detectar estilo de encabezado
+    // 2. Detección de encabezado
     bool isHeading = false;
-    double fontSize = 10.5;
+    double baseFontSize = 10.5;
     final pStyle = pElement.findAllElements('w:pStyle').firstOrNull;
     if (pStyle != null) {
       final styleVal = pStyle.getAttribute('w:val')?.toLowerCase() ?? '';
       if (styleVal.contains('heading') || styleVal.contains('título') || styleVal.contains('titulo')) {
         isHeading = true;
-        fontSize = styleVal.contains('1') ? 16 : (styleVal.contains('2') ? 13.5 : 12);
+        baseFontSize = styleVal.contains('1') ? 16.0 : (styleVal.contains('2') ? 13.5 : 12.0);
       }
     }
+
+    // 3. Revisar si el párrafo contiene una imagen en línea
+    final drawings = pElement.findAllElements('a:blip');
+    final inlineImages = <pw.Widget>[];
+
+    for (final blip in drawings) {
+      final rId = blip.getAttribute('r:embed');
+      if (rId != null && imageRelMap.containsKey(rId)) {
+        final imgPath = imageRelMap[rId]!;
+        final imgBytes = imagesData[imgPath];
+        if (imgBytes != null && imgBytes.isNotEmpty) {
+          try {
+            final memImage = pw.MemoryImage(imgBytes);
+            inlineImages.add(
+              pw.Container(
+                margin: const pw.EdgeInsets.symmetric(vertical: 6),
+                alignment: align == pw.TextAlign.center
+                    ? pw.Alignment.center
+                    : (align == pw.TextAlign.right ? pw.Alignment.centerRight : pw.Alignment.centerLeft),
+                child: pw.ConstrainedBox(
+                  constraints: const pw.BoxConstraints(maxHeight: 260, maxWidth: 480),
+                  child: pw.Image(memImage, fit: pw.BoxFit.contain),
+                ),
+              ),
+            );
+          } catch (_) {}
+        }
+      }
+    }
+
+    // 4. Procesar runs de texto
+    final runs = pElement.findAllElements('w:r');
+    final spans = <pw.InlineSpan>[];
 
     for (final r in runs) {
       final t = r.findElements('w:t').map((e) => e.innerText).join();
@@ -276,14 +249,24 @@ class DocumentConverterService {
       final isItalic = r.findAllElements('w:i').isNotEmpty;
 
       // Color del texto
-      PdfColor color = PdfColors.black;
+      PdfColor color = isHeading ? PdfColors.black : PdfColors.black;
       final colorEl = r.findAllElements('w:color').firstOrNull;
       if (colorEl != null) {
         final val = colorEl.getAttribute('w:val');
-        if (val != null && val.length == 6) {
+        if (val != null && val.length == 6 && val != 'auto') {
           try {
             color = PdfColor.fromHex(val);
           } catch (_) {}
+        }
+      }
+
+      // Tamaño de fuente personalizado en medios puntos (ej. 24 = 12pt)
+      double fontSize = isHeading ? baseFontSize : 10.5;
+      final szEl = r.findAllElements('w:sz').firstOrNull;
+      if (szEl != null) {
+        final szVal = double.tryParse(szEl.getAttribute('w:val') ?? '');
+        if (szVal != null && szVal > 0) {
+          fontSize = (szVal / 2).clamp(7.0, 32.0);
         }
       }
 
@@ -293,80 +276,132 @@ class DocumentConverterService {
           style: pw.TextStyle(
             fontWeight: isBold ? pw.FontWeight.bold : pw.FontWeight.normal,
             fontStyle: isItalic ? pw.FontStyle.italic : pw.FontStyle.normal,
-            fontSize: isHeading ? fontSize : 10.5,
-            color: isHeading ? PdfColor.fromHex('185ABD') : color,
+            fontSize: fontSize,
+            color: color,
           ),
         ),
       );
     }
 
-    if (spans.isEmpty) {
-      return pw.SizedBox(height: 6);
+    if (spans.isEmpty && inlineImages.isEmpty) {
+      return pw.SizedBox(height: 5);
     }
 
-    return pw.Padding(
-      padding: pw.EdgeInsets.symmetric(vertical: isHeading ? 6.0 : 2.5),
+    if (inlineImages.isNotEmpty && spans.isEmpty) {
+      return pw.Column(children: inlineImages);
+    }
+
+    final textWidget = pw.Padding(
+      padding: pw.EdgeInsets.symmetric(vertical: isHeading ? 4.0 : 1.5),
       child: pw.RichText(
         textAlign: align,
         text: pw.TextSpan(children: spans),
       ),
     );
+
+    if (inlineImages.isNotEmpty) {
+      return pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+        children: [
+          textWidget,
+          ...inlineImages,
+        ],
+      );
+    }
+
+    return textWidget;
   }
 
-  pw.Widget? _parseDocxTable(XmlElement tblElement) {
-    final rows = tblElement.findElements('w:tr');
-    if (rows.isEmpty) return null;
+  pw.Widget? _parseDocxTable(
+    XmlElement tblElement,
+    Map<String, String> imageRelMap,
+    Map<String, Uint8List> imagesData,
+  ) {
+    // 1. Extraer anchos de columna definidos en <w:tblGrid>
+    final gridCols = tblElement.findAllElements('w:gridCol').toList();
+    final columnWidths = <int, pw.TableColumnWidth>{};
+    if (gridCols.isNotEmpty) {
+      for (var i = 0; i < gridCols.length; i++) {
+        final w = double.tryParse(gridCols[i].getAttribute('w:w') ?? '1000') ?? 1000;
+        columnWidths[i] = pw.FlexColumnWidth(w > 0 ? w : 1000);
+      }
+    }
+
+    // 2. Extraer filas
+    final trElements = tblElement.findElements('w:tr').toList();
+    if (trElements.isEmpty) return null;
 
     final tableRows = <pw.TableRow>[];
-    var isHeader = true;
 
-    for (final tr in rows) {
-      final cells = tr.findElements('w:tc');
-      final rowWidgets = <pw.Widget>[];
+    for (final tr in trElements) {
+      final tcElements = tr.findElements('w:tc').toList();
+      if (tcElements.isEmpty) continue;
 
-      for (final tc in cells) {
-        final cellText = tc.findAllElements('w:t').map((e) => e.innerText).join(' ').trim();
-        rowWidgets.add(
+      final cellWidgets = <pw.Widget>[];
+
+      for (final tc in tcElements) {
+        // Color de fondo de celda <w:shd w:fill="...">
+        PdfColor? cellBg;
+        final shd = tc.findAllElements('w:shd').firstOrNull;
+        if (shd != null) {
+          final fill = shd.getAttribute('w:fill');
+          if (fill != null && fill.length == 6 && fill != 'auto' && fill != 'none') {
+            try {
+              cellBg = PdfColor.fromHex(fill);
+            } catch (_) {}
+          }
+        }
+
+        // Párrafos contenidos dentro de la celda
+        final pElements = tc.findElements('w:p');
+        final cellChildren = <pw.Widget>[];
+
+        for (final pEl in pElements) {
+          final pWidget = _parseDocxParagraph(pEl, imageRelMap, imagesData);
+          if (pWidget != null) cellChildren.add(pWidget);
+        }
+
+        if (cellChildren.isEmpty) {
+          cellChildren.add(pw.Text(' ', style: const pw.TextStyle(fontSize: 9)));
+        }
+
+        cellWidgets.add(
           pw.Container(
-            padding: const pw.EdgeInsets.all(6),
-            color: isHeader ? PdfColor.fromHex('E8EEF7') : null,
-            child: pw.Text(
-              cellText,
-              style: pw.TextStyle(
-                fontSize: 9,
-                fontWeight: isHeader ? pw.FontWeight.bold : pw.FontWeight.normal,
-                color: isHeader ? PdfColor.fromHex('185ABD') : PdfColors.black,
-              ),
+            padding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 4),
+            color: cellBg,
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+              children: cellChildren,
             ),
           ),
         );
       }
 
-      if (rowWidgets.isNotEmpty) {
-        tableRows.add(pw.TableRow(children: rowWidgets));
-        isHeader = false;
+      if (cellWidgets.isNotEmpty) {
+        tableRows.add(pw.TableRow(children: cellWidgets));
       }
     }
 
     if (tableRows.isEmpty) return null;
 
     return pw.Container(
-      margin: const pw.EdgeInsets.symmetric(vertical: 10),
+      margin: const pw.EdgeInsets.symmetric(vertical: 8),
       child: pw.Table(
-        border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.8),
+        border: pw.TableBorder.all(color: PdfColors.grey500, width: 0.6),
+        columnWidths: columnWidths.isNotEmpty ? columnWidths : null,
         children: tableRows,
       ),
     );
   }
 
   // ===========================================================================
-  // 2. CONVERSIÓN DE EXCEL (.XLSX) A PDF CON CUADRÍCULA Y FORMATO TABULAR
+  // 2. CONVERSIÓN DE EXCEL (.XLSX) A PDF CON CUADRÍCULA LIMPIA (SIN CABECERAS EXTRA)
   // ===========================================================================
-  void _convertXlsxToPdf(pw.Document pdf, Uint8List bytes, String fileName) {
+  void _convertXlsxToPdf(pw.Document pdf, List<int> bytes) {
     try {
       final archive = ZipDecoder().decodeBytes(bytes);
 
-      // 1. Leer sharedStrings.xml si existe
+      // 1. Leer sharedStrings.xml
       final sharedStrings = <String>[];
       final sharedStringsFile = archive.findFile('xl/sharedStrings.xml');
       if (sharedStringsFile != null) {
@@ -386,7 +421,7 @@ class DocumentConverterService {
           );
 
       if (sheetFile.size == 0) {
-        _convertGenericTextToPdf(pdf, bytes, fileName);
+        _convertGenericTextToPdf(pdf, bytes, 'Hoja de Cálculo');
         return;
       }
 
@@ -395,10 +430,9 @@ class DocumentConverterService {
 
       final rowElements = sheetDoc.findAllElements('row');
       final gridData = <List<String>>[];
-
       var maxColumns = 0;
 
-      for (final r in rowElements.take(80)) {
+      for (final r in rowElements.take(100)) {
         final rowCells = <String>[];
         for (final c in r.findElements('c')) {
           final tAttr = c.getAttribute('t');
@@ -432,17 +466,16 @@ class DocumentConverterService {
         gridData.add(rowCells);
       }
 
-      // Normalizar columnas para la tabla
       final normalizedRows = <pw.TableRow>[];
 
-      // Cabecera de letras de columnas (A, B, C...)
+      // Cabecera de letras de columnas (A, B, C...) limpia
       final colHeaderWidgets = <pw.Widget>[
         pw.Container(
-          width: 24,
-          padding: const pw.EdgeInsets.all(4),
+          width: 22,
+          padding: const pw.EdgeInsets.all(3.5),
           color: PdfColor.fromHex('107C41'),
           alignment: pw.Alignment.center,
-          child: pw.Text('#', style: pw.TextStyle(color: PdfColors.white, fontWeight: pw.FontWeight.bold, fontSize: 8)),
+          child: pw.Text('#', style: pw.TextStyle(color: PdfColors.white, fontWeight: pw.FontWeight.bold, fontSize: 7.5)),
         ),
       ];
 
@@ -451,12 +484,12 @@ class DocumentConverterService {
         colHeaderWidgets.add(
           pw.Expanded(
             child: pw.Container(
-              padding: const pw.EdgeInsets.all(4),
+              padding: const pw.EdgeInsets.all(3.5),
               color: PdfColor.fromHex('107C41'),
               alignment: pw.Alignment.center,
               child: pw.Text(
                 colLetter,
-                style: pw.TextStyle(color: PdfColors.white, fontWeight: pw.FontWeight.bold, fontSize: 8),
+                style: pw.TextStyle(color: PdfColors.white, fontWeight: pw.FontWeight.bold, fontSize: 7.5),
               ),
             ),
           ),
@@ -467,13 +500,12 @@ class DocumentConverterService {
       for (var rIdx = 0; rIdx < gridData.length; rIdx++) {
         final row = gridData[rIdx];
         final rowWidgets = <pw.Widget>[
-          // Número de fila
           pw.Container(
-            width: 24,
-            padding: const pw.EdgeInsets.all(3.5),
+            width: 22,
+            padding: const pw.EdgeInsets.all(3.0),
             color: PdfColors.grey200,
             alignment: pw.Alignment.center,
-            child: pw.Text('${rIdx + 1}', style: const pw.TextStyle(fontSize: 7.5, color: PdfColors.grey700)),
+            child: pw.Text('${rIdx + 1}', style: const pw.TextStyle(fontSize: 7.0, color: PdfColors.grey700)),
           ),
         ];
 
@@ -484,7 +516,7 @@ class DocumentConverterService {
           rowWidgets.add(
             pw.Expanded(
               child: pw.Container(
-                padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 3.5),
+                padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 3.0),
                 color: rIdx.isEven ? PdfColors.white : PdfColor.fromHex('F7FAF8'),
                 alignment: isNumber ? pw.Alignment.centerRight : pw.Alignment.centerLeft,
                 child: pw.Text(
@@ -492,9 +524,9 @@ class DocumentConverterService {
                   maxLines: 2,
                   overflow: pw.TextOverflow.clip,
                   style: pw.TextStyle(
-                    fontSize: 8,
+                    fontSize: 7.5,
                     fontWeight: rIdx == 0 ? pw.FontWeight.bold : pw.FontWeight.normal,
-                    color: rIdx == 0 ? PdfColor.fromHex('107C41') : PdfColors.black,
+                    color: PdfColors.black,
                   ),
                 ),
               ),
@@ -508,43 +540,10 @@ class DocumentConverterService {
       pdf.addPage(
         pw.MultiPage(
           pageFormat: PdfPageFormat.a4.landscape,
-          margin: const pw.EdgeInsets.all(28),
-          header: (context) => pw.Container(
-            padding: const pw.EdgeInsets.all(10),
-            margin: const pw.EdgeInsets.only(bottom: 12),
-            decoration: pw.BoxDecoration(
-              color: PdfColor.fromHex('E8F5E9'),
-              borderRadius: pw.BorderRadius.circular(6),
-              border: pw.Border.all(color: PdfColor.fromHex('107C41'), width: 1.2),
-            ),
-            child: pw.Row(
-              children: [
-                pw.Container(
-                  padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: pw.BoxDecoration(
-                    color: PdfColor.fromHex('107C41'),
-                    borderRadius: pw.BorderRadius.circular(4),
-                  ),
-                  child: pw.Text('XLSX', style: pw.TextStyle(color: PdfColors.white, fontWeight: pw.FontWeight.bold, fontSize: 10)),
-                ),
-                pw.SizedBox(width: 8),
-                pw.Text(
-                  fileName,
-                  style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12, color: PdfColor.fromHex('107C41')),
-                ),
-                pw.Spacer(),
-                pw.Text('Hoja 1 - Cuadrícula de Datos', style: const pw.TextStyle(fontSize: 8.5, color: PdfColors.grey700)),
-              ],
-            ),
-          ),
-          footer: (context) => pw.Container(
-            alignment: pw.Alignment.centerRight,
-            margin: const pw.EdgeInsets.only(top: 8),
-            child: pw.Text('Página ${context.pageNumber} de ${context.pagesCount} - EduSlide Excel Viewer', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
-          ),
+          margin: const pw.EdgeInsets.all(20),
           build: (context) => [
             pw.Table(
-              border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.6),
+              border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
               children: normalizedRows,
             ),
           ],
@@ -552,14 +551,14 @@ class DocumentConverterService {
       );
     } catch (e) {
       debugPrint('[DocumentConverter] Error convirtiendo XLSX: $e');
-      _convertGenericTextToPdf(pdf, bytes, fileName);
+      _convertGenericTextToPdf(pdf, bytes, 'Hoja de Cálculo');
     }
   }
 
   // ===========================================================================
-  // 3. CONVERSIÓN DE POWERPOINT (.PPTX) A PDF EN FORMATO SLIDE LANDSCAPE
+  // 3. CONVERSIÓN DE POWERPOINT (.PPTX) A PDF LIMPIO EN 16:9
   // ===========================================================================
-  void _convertPptxToPdf(pw.Document pdf, Uint8List bytes, String fileName) {
+  void _convertPptxToPdf(pw.Document pdf, List<int> bytes) {
     try {
       final archive = ZipDecoder().decodeBytes(bytes);
 
@@ -575,7 +574,7 @@ class DocumentConverterService {
       });
 
       if (slideFiles.isEmpty) {
-        _convertGenericTextToPdf(pdf, bytes, fileName);
+        _convertGenericTextToPdf(pdf, bytes, 'Presentación');
         return;
       }
 
@@ -588,7 +587,6 @@ class DocumentConverterService {
       }
 
       var slideIndex = 1;
-      final totalSlides = slideFiles.length;
 
       for (final slideFile in slideFiles) {
         final slideXml = utf8.decode(slideFile.content as List<int>, allowMalformed: true);
@@ -625,52 +623,30 @@ class DocumentConverterService {
         pdf.addPage(
           pw.Page(
             pageFormat: PdfPageFormat.a4.landscape,
-            margin: const pw.EdgeInsets.all(32),
+            margin: const pw.EdgeInsets.all(28),
             build: (context) {
               return pw.Container(
                 decoration: pw.BoxDecoration(
-                  color: PdfColor.fromHex('FFF8F6'),
-                  borderRadius: pw.BorderRadius.circular(12),
-                  border: pw.Border.all(color: PdfColor.fromHex('D24726'), width: 2),
+                  color: PdfColors.white,
+                  borderRadius: pw.BorderRadius.circular(8),
+                  border: pw.Border.all(color: PdfColors.grey300, width: 1.0),
                 ),
                 padding: const pw.EdgeInsets.all(24),
                 child: pw.Column(
                   crossAxisAlignment: pw.CrossAxisAlignment.stretch,
                   children: [
-                    // Barra superior de la diapositiva
-                    pw.Row(
-                      children: [
-                        pw.Container(
-                          padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: pw.BoxDecoration(
-                            color: PdfColor.fromHex('D24726'),
-                            borderRadius: pw.BorderRadius.circular(4),
-                          ),
-                          child: pw.Text(
-                            'PPTX - Diapositiva $slideIndex de $totalSlides',
-                            style: pw.TextStyle(color: PdfColors.white, fontWeight: pw.FontWeight.bold, fontSize: 10),
-                          ),
-                        ),
-                        pw.Spacer(),
-                        pw.Text(
-                          fileName,
-                          style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey600),
-                        ),
-                      ],
-                    ),
-                    pw.SizedBox(height: 16),
-
                     // Título de la diapositiva
                     pw.Text(
                       slideTitle,
                       style: pw.TextStyle(
-                        fontSize: 20,
+                        fontSize: 22,
                         fontWeight: pw.FontWeight.bold,
-                        color: PdfColor.fromHex('D24726'),
+                        color: PdfColor.fromHex('1E293B'),
                       ),
                     ),
-                    pw.Divider(color: PdfColor.fromHex('D24726'), thickness: 1.5),
-                    pw.SizedBox(height: 12),
+                    pw.SizedBox(height: 8),
+                    pw.Divider(color: PdfColor.fromHex('CBD5E1'), thickness: 1.0),
+                    pw.SizedBox(height: 14),
 
                     // Contenido y viñetas
                     pw.Expanded(
@@ -682,41 +658,26 @@ class DocumentConverterService {
                               crossAxisAlignment: pw.CrossAxisAlignment.start,
                               children: [
                                 pw.Container(
-                                  margin: const pw.EdgeInsets.only(top: 4, right: 8),
-                                  width: 6,
-                                  height: 6,
-                                  decoration: pw.BoxDecoration(
-                                    color: PdfColor.fromHex('D24726'),
+                                  margin: const pw.EdgeInsets.only(top: 5, right: 8),
+                                  width: 5,
+                                  height: 5,
+                                  decoration: const pw.BoxDecoration(
+                                    color: PdfColors.blueGrey700,
                                     shape: pw.BoxShape.circle,
                                   ),
                                 ),
                                 pw.Expanded(
                                   child: pw.Text(
                                     point,
-                                    style: const pw.TextStyle(fontSize: 12.5, height: 1.35),
+                                    style: const pw.TextStyle(fontSize: 13, height: 1.35, color: PdfColors.black),
                                   ),
                                 ),
                               ],
                             ),
-                            pw.SizedBox(height: 8),
+                            pw.SizedBox(height: 10),
                           ],
                         ],
                       ),
-                    ),
-
-                    // Pie de diapositiva
-                    pw.Row(
-                      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                      children: [
-                        pw.Text(
-                          'EduSlide - Proyección en Aula Didáctica',
-                          style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600),
-                        ),
-                        pw.Text(
-                          'EduProjects BO',
-                          style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold, color: PdfColor.fromHex('D24726')),
-                        ),
-                      ],
                     ),
                   ],
                 ),
@@ -729,15 +690,14 @@ class DocumentConverterService {
       }
     } catch (e) {
       debugPrint('[DocumentConverter] Error convirtiendo PPTX: $e');
-      _convertGenericTextToPdf(pdf, bytes, fileName);
+      _convertGenericTextToPdf(pdf, bytes, 'Presentación');
     }
   }
 
   // ===========================================================================
   // 4. SOPORTE DE ARCHIVOS LEGACY (.DOC, .XLS, .PPT) Y TEXTO PLANO
   // ===========================================================================
-  void _convertLegacyOfficeToPdf(pw.Document pdf, Uint8List bytes, String fileName, String ext) {
-    // Para archivos binarios anteriores a OpenXML, extraer las cadenas legibles en UTF-8 / ASCII
+  void _convertLegacyOfficeToPdf(pw.Document pdf, List<int> bytes) {
     final buffer = StringBuffer();
     var currentWord = StringBuffer();
 
@@ -757,48 +717,13 @@ class DocumentConverterService {
 
     final rawLines = buffer.toString().split('\n').where((l) => l.trim().length > 3).take(150).toList();
 
-    PdfColor themeColor = PdfColor.fromHex('185ABD');
-    String tag = 'DOC';
-    if (ext == '.xls') {
-      themeColor = PdfColor.fromHex('107C41');
-      tag = 'XLS';
-    } else if (ext == '.ppt') {
-      themeColor = PdfColor.fromHex('D24726');
-      tag = 'PPT';
-    }
-
     pdf.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(32),
         build: (context) => [
-          pw.Container(
-            padding: const pw.EdgeInsets.all(12),
-            margin: const pw.EdgeInsets.only(bottom: 16),
-            decoration: pw.BoxDecoration(
-              color: PdfColor.fromHex('F5F5F5'),
-              borderRadius: pw.BorderRadius.circular(6),
-              border: pw.Border.all(color: themeColor, width: 1.2),
-            ),
-            child: pw.Row(
-              children: [
-                pw.Container(
-                  padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: pw.BoxDecoration(color: themeColor, borderRadius: pw.BorderRadius.circular(4)),
-                  child: pw.Text(tag, style: pw.TextStyle(color: PdfColors.white, fontWeight: pw.FontWeight.bold, fontSize: 10)),
-                ),
-                pw.SizedBox(width: 10),
-                pw.Expanded(
-                  child: pw.Text(
-                    fileName,
-                    style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 13, color: themeColor),
-                  ),
-                ),
-              ],
-            ),
-          ),
           for (final line in rawLines) ...[
-            pw.Text(line, style: const pw.TextStyle(fontSize: 10, height: 1.3)),
+            pw.Text(line, style: const pw.TextStyle(fontSize: 10.5, height: 1.3)),
             pw.SizedBox(height: 3),
           ],
         ],
@@ -806,7 +731,7 @@ class DocumentConverterService {
     );
   }
 
-  void _convertGenericTextToPdf(pw.Document pdf, Uint8List bytes, String fileName) {
+  void _convertGenericTextToPdf(pw.Document pdf, List<int> bytes, String title) {
     String text;
     try {
       text = utf8.decode(bytes);
@@ -821,10 +746,8 @@ class DocumentConverterService {
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(32),
         build: (context) => [
-          pw.Text(fileName, style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
-          pw.Divider(),
           for (final line in lines) ...[
-            pw.Text(line, style: const pw.TextStyle(fontSize: 10, height: 1.25)),
+            pw.Text(line, style: const pw.TextStyle(fontSize: 10.5, height: 1.25)),
             pw.SizedBox(height: 2),
           ],
         ],

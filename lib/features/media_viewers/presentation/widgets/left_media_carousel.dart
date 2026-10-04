@@ -30,35 +30,35 @@ class _LeftMediaCarouselState extends State<LeftMediaCarousel> {
   // Lista de materiales de respaldo en caso de inicialización sin tema activo
   static const List<ResourceItem> _fallbackResources = [
     ResourceItem(
-      id: 'doc_1',
-      path: '/storage/docs/plan_clase.docx',
-      name: 'Plan Anual Curricular',
-      extension: '.docx',
-      sizeBytes: 850000,
-      type: ResourceType.docx,
-    ),
-    ResourceItem(
-      id: 'xls_1',
-      path: '/storage/docs/registro_evaluacion.xlsx',
-      name: 'Registro Pedagógico',
-      extension: '.xlsx',
-      sizeBytes: 620000,
-      type: ResourceType.xlsx,
-    ),
-    ResourceItem(
-      id: 'ppt_1',
-      path: '/storage/docs/ciencias_naturales.pptx',
-      name: 'Ciencias y Universo',
-      extension: '.pptx',
-      sizeBytes: 3400000,
-      type: ResourceType.pptx,
+      id: 'slide_1',
+      path: '/storage/slides/sistema_solar.eslide',
+      name: 'Sistema Solar 3D',
+      extension: '.eslide',
+      sizeBytes: 1400000,
+      type: ResourceType.slide,
     ),
     ResourceItem(
       id: 'pdf_1',
       path: '/storage/docs/guia_geometria.pdf',
-      name: 'Guía Didáctica Matemática',
+      name: 'Guía Geometría',
       extension: '.pdf',
       sizeBytes: 2100000,
+      type: ResourceType.pdf,
+    ),
+    ResourceItem(
+      id: 'slide_2',
+      path: '/storage/slides/ecuaciones.json',
+      name: 'Ecuaciones Paso a Paso',
+      extension: '.json',
+      sizeBytes: 950000,
+      type: ResourceType.slide,
+    ),
+    ResourceItem(
+      id: 'pdf_2',
+      path: '/storage/docs/diagnostico.pdf',
+      name: 'Examen Diagnóstico',
+      extension: '.pdf',
+      sizeBytes: 1800000,
       type: ResourceType.pdf,
     ),
   ];
@@ -171,37 +171,6 @@ class _LeftMediaCarouselState extends State<LeftMediaCarousel> {
               ),
               const SizedBox(height: 3),
 
-              // Insignia / Etiqueta con fondo redondeado (BorderRadius.circular(6)) y color corporativo
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-                decoration: BoxDecoration(
-                  color: item.accentColor.withValues(alpha: 0.16),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(
-                    color: item.accentColor.withValues(alpha: 0.55),
-                    width: 0.9,
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(item.icon, size: 9.0, color: item.accentColor),
-                    const SizedBox(width: 3),
-                    Text(
-                      item.badgeLabel,
-                      style: TextStyle(
-                        fontSize: 7.5,
-                        fontWeight: FontWeight.w800,
-                        color: item.accentColor,
-                        letterSpacing: 0.3,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 2),
-
               // Título con rotación continua (Marquee) para títulos largos
               MarqueeText(
                 text: item.name,
@@ -219,9 +188,9 @@ class _LeftMediaCarouselState extends State<LeftMediaCarousel> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontSize: 7.0,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textMuted,
+                  fontSize: 7.5,
+                  fontWeight: FontWeight.bold,
+                  color: item.accentColor,
                 ),
               ),
             ],
@@ -270,19 +239,21 @@ class _LeftMediaCarouselState extends State<LeftMediaCarousel> {
 
   /// Genera una miniatura rica y realista del recurso para certeza visual del maestro
   Widget _buildThumbnail(ResourceItem item) {
+    final bool isPdf = item.type == ResourceType.pdf;
+
     return Container(
       decoration: BoxDecoration(
-        color: item.accentColor.withValues(alpha: 0.10),
+        color: isPdf ? const Color(0xFF2B1D24) : const Color(0xFF132238),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: item.accentColor.withValues(alpha: 0.45),
-          width: 0.8,
+          color: item.accentColor.withValues(alpha: 0.4),
+          width: 0.7,
         ),
       ),
       child: Stack(
         alignment: Alignment.center,
         children: [
-          // Maqueta visual de miniatura de página, tabla o diapositiva
+          // Maqueta visual de miniatura de página o diapositiva
           Positioned(
             top: 4,
             left: 5,
@@ -291,7 +262,7 @@ class _LeftMediaCarouselState extends State<LeftMediaCarousel> {
             child: Container(
               padding: const EdgeInsets.all(3),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.06),
+                color: isPdf ? Colors.white.withValues(alpha: 0.08) : AppColors.surfaceLight.withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(4),
               ),
               child: Column(
@@ -300,7 +271,7 @@ class _LeftMediaCarouselState extends State<LeftMediaCarousel> {
                   Row(
                     children: [
                       Container(
-                        width: 12,
+                        width: 10,
                         height: 2.5,
                         decoration: BoxDecoration(
                           color: item.accentColor,
@@ -332,24 +303,20 @@ class _LeftMediaCarouselState extends State<LeftMediaCarousel> {
             color: item.accentColor,
           ),
 
-          // Insignia en la esquina superior derecha
+          // Badge en la esquina superior derecha
           Positioned(
             top: 2,
             right: 2,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1.5),
+              padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
               decoration: BoxDecoration(
                 color: Colors.black87,
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(
-                  color: item.accentColor.withValues(alpha: 0.5),
-                  width: 0.6,
-                ),
+                borderRadius: BorderRadius.circular(3),
               ),
               child: Text(
-                item.badgeLabel,
+                isPdf ? 'PDF' : item.extension.toUpperCase().replaceAll('.', ''),
                 style: TextStyle(
-                  fontSize: 6.5,
+                  fontSize: 6.0,
                   fontWeight: FontWeight.bold,
                   color: item.accentColor,
                 ),

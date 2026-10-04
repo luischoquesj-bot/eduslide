@@ -62,7 +62,7 @@ void main() {
 </w:document>''';
 
       archive.addFile(ArchiveFile('word/document.xml', documentXml.length, utf8.encode(documentXml)));
-      final zipBytes = ZipEncoder().encode(archive)!;
+      final zipBytes = ZipEncoder().encode(archive);
 
       final testDocxFile = File('${fakePathProvider.tempDir.path}/test_unit.docx');
       await testDocxFile.writeAsBytes(zipBytes);
@@ -110,7 +110,7 @@ void main() {
 
       archive.addFile(ArchiveFile('xl/sharedStrings.xml', sharedStringsXml.length, utf8.encode(sharedStringsXml)));
       archive.addFile(ArchiveFile('xl/worksheets/sheet1.xml', sheetXml.length, utf8.encode(sheetXml)));
-      final zipBytes = ZipEncoder().encode(archive)!;
+      final zipBytes = ZipEncoder().encode(archive);
 
       final testXlsxFile = File('${fakePathProvider.tempDir.path}/test_grid.xlsx');
       await testXlsxFile.writeAsBytes(zipBytes);
@@ -144,7 +144,7 @@ void main() {
 </p:sld>''';
 
       archive.addFile(ArchiveFile('ppt/slides/slide1.xml', slide1Xml.length, utf8.encode(slide1Xml)));
-      final zipBytes = ZipEncoder().encode(archive)!;
+      final zipBytes = ZipEncoder().encode(archive);
 
       final testPptxFile = File('${fakePathProvider.tempDir.path}/test_slide.pptx');
       await testPptxFile.writeAsBytes(zipBytes);
