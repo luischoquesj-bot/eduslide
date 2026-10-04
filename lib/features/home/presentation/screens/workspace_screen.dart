@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
@@ -11,6 +12,8 @@ import '../../../media_viewers/presentation/widgets/interactive_resource_viewer.
 import '../../../media_viewers/presentation/widgets/left_media_carousel.dart';
 import '../../../media_viewers/presentation/widgets/right_media_carousel.dart';
 import '../../../whiteboard/presentation/widgets/whiteboard_canvas.dart';
+import 'package:eduslide/features/remote_control/data/remote_server_service.dart';
+import 'package:eduslide/features/remote_control/presentation/widgets/qr_pairing_dialog.dart';
 import '../widgets/control_bottom_sheet.dart';
 import '../widgets/welcome_card.dart';
 
@@ -55,8 +58,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   ScreenDistributionMode _layoutMode = ScreenDistributionMode.standard801010;
   double _resourceSplitRatio = 1.0; // 1.0 = 100% superpuesto, 0.50 = 50/50, 0.75 = 75/25
 
-  // Estado del mando remoto
+  // Estado del mando remoto y servidor WebSocket local
   bool _isRemoteConnected = false;
+  StreamSubscription<Map<String, dynamic>>? _remoteCommandSub;
 
   // Control de visualización de la tarjeta de bienvenida
   bool _showWelcomeCard = true;
@@ -65,6 +69,60 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   void initState() {
     super.initState();
     _initializeStorage();
+    _initRemoteServer();
+  }
+
+  @override
+  void dispose() {
+    _remoteCommandSub?.cancel();
+    RemoteServerService().isClientConnected.removeListener(_onClientConnectionChanged);
+    super.dispose();
+  }
+
+  /// Inicializa el servidor WebSocket local para mando móvil y escucha eventos
+  void _initRemoteServer() {
+    final server = RemoteServerService();
+    server.startServer();
+    _isRemoteConnected = server.isClientConnected.value;
+    server.isClientConnected.addListener(_onClientConnectionChanged);
+    _remoteCommandSub = server.onCommand.listen(_handleRemoteCommand);
+  }
+
+  void _onClientConnectionChanged() {
+    if (mounted) {
+      setState(() {
+        _isRemoteConnected = RemoteServerService().isClientConnected.value;
+      });
+    }
+  }
+
+  /// Procesa los comandos recibidos desde el teléfono móvil conectado
+  void _handleRemoteCommand(Map<String, dynamic> data) {
+    final action = data['action'] as String?;
+    if (action == null || !mounted) return;
+
+    switch (action) {
+      case 'split_50':
+        setState(() {
+          _layoutMode = ScreenDistributionMode.split5050;
+          _resourceSplitRatio = 0.50;
+        });
+        break;
+      case 'full_100':
+        setState(() {
+          _layoutMode = ScreenDistributionMode.full100;
+          _resourceSplitRatio = 1.0;
+        });
+        break;
+      case 'close_resource':
+        setState(() {
+          _leftResource = null;
+          _rightResource = null;
+        });
+        break;
+      default:
+        break;
+    }
   }
 
   /// Inicializa la detección de memorias y carga el tema curricular inicial
@@ -770,67 +828,115 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     );
   }
 
-  /// Botón Flotante Central Inferior compacto, situado delante de la pizarra
+  /// Botón Flotante Central Inferior compacto con Control de Espacio y Enlazar Control
   Widget _buildFloatingControlPill() {
     return Material(
       color: Colors.transparent,
-      child: InkWell(
-        onTap: _openControlBottomSheet,
-        borderRadius: BorderRadius.circular(20),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-          decoration: BoxDecoration(
-            color: AppColors.surfaceElevated.withValues(alpha: 0.92),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: AppColors.primary.withValues(alpha: 0.65),
-              width: 1.0,
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.surfaceElevated.withValues(alpha: 0.95),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: AppColors.primary.withValues(alpha: 0.65),
+            width: 1.0,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.40),
+              blurRadius: 12,
+              offset: const Offset(0, 2),
             ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.35),
-                blurRadius: 10,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 6,
-                height: 6,
-                decoration: BoxDecoration(
-                  color: _isRemoteConnected
-                      ? AppColors.accentGreen
-                      : AppColors.primary,
-                  shape: BoxShape.circle,
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Opción 1: Control de Espacio (Distribución de pantalla)
+            InkWell(
+              onTap: _openControlBottomSheet,
+              borderRadius: const BorderRadius.horizontal(left: Radius.circular(20)),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: _isRemoteConnected
+                            ? AppColors.accentGreen
+                            : AppColors.primary,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    const Icon(
+                      Icons.dashboard_customize_rounded,
+                      size: 13,
+                      color: AppColors.primary,
+                    ),
+                    const SizedBox(width: 5),
+                    const Text(
+                      'Control de Espacio',
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                    const SizedBox(width: 3),
+                    const Icon(
+                      Icons.keyboard_arrow_up_rounded,
+                      size: 15,
+                      color: AppColors.textSecondary,
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 6),
-              const Icon(
-                Icons.dashboard_customize_rounded,
-                size: 13,
-                color: AppColors.primary,
-              ),
-              const SizedBox(width: 5),
-              const Text(
-                'Control de Espacio',
-                style: TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.2,
+            ),
+
+            // Divisor vertical sutil
+            Container(
+              height: 14,
+              width: 1,
+              color: AppColors.borderSubtle,
+            ),
+
+            // Opción 2: Enlazar Control (Modal QR con WebSocket)
+            InkWell(
+              onTap: () => QrPairingDialog.show(context),
+              borderRadius: const BorderRadius.horizontal(right: Radius.circular(20)),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.qr_code_rounded,
+                      size: 13,
+                      color: _isRemoteConnected
+                          ? AppColors.accentGreen
+                          : AppColors.secondary,
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      'Enlazar Control',
+                      style: TextStyle(
+                        color: _isRemoteConnected
+                            ? AppColors.accentGreen
+                            : AppColors.textPrimary,
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 3),
-              const Icon(
-                Icons.keyboard_arrow_up_rounded,
-                size: 15,
-                color: AppColors.textSecondary,
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

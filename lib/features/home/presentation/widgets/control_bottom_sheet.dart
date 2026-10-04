@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_strings.dart';
 import '../../../../core/constants/app_text_styles.dart';
+import 'package:eduslide/features/remote_control/presentation/widgets/qr_pairing_dialog.dart';
 
 /// Modos de distribución de pantalla interactiva en EduSlide
 enum ScreenDistributionMode {
@@ -698,6 +699,23 @@ class _ControlBottomSheetState extends State<ControlBottomSheet> {
             ),
           ),
           const SizedBox(width: 8),
+
+          // Botón para desplegar código QR y enlace de emparejamiento
+          OutlinedButton.icon(
+            onPressed: () {
+              Navigator.of(context).pop();
+              QrPairingDialog.show(context);
+            },
+            icon: const Icon(Icons.qr_code_rounded, size: 15),
+            label: const Text('Ver QR', style: TextStyle(fontSize: 10.5)),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.secondary,
+              side: const BorderSide(color: AppColors.secondary, width: 1.0),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+          ),
+          const SizedBox(width: 6),
 
           // Switch de conexión
           Switch(
