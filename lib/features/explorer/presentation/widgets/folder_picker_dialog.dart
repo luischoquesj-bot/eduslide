@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
+import 'package:permission_handler/permission_handler.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../data/storage_service.dart';
@@ -341,6 +342,14 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
               ),
             ),
           ),
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded, size: 16),
+            tooltip: 'Recargar carpeta',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+            onPressed: () => _loadDirectoryContents(_currentPath),
+            color: AppColors.textSecondary,
+          ),
         ],
       ),
     );
@@ -349,21 +358,40 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
   Widget _buildFolderContent() {
     if (_subdirectories.isEmpty && _currentFolderResources.isEmpty) {
       return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.folder_off_rounded, size: 42, color: AppColors.textMuted),
-            const SizedBox(height: 8),
-            const Text(
-              'Esta carpeta está vacía o no contiene archivos educativos compatibles.',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Formatos: PDF, Diapositivas (.eslide, .json), Imágenes, Videos y Audios',
-              style: TextStyle(color: AppColors.textMuted.withValues(alpha: 0.8), fontSize: 10),
-            ),
-          ],
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.folder_off_rounded, size: 40, color: AppColors.textMuted),
+              const SizedBox(height: 8),
+              const Text(
+                'No se detectaron archivos ni subcarpetas en este directorio.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppColors.textPrimary, fontSize: 12, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Formatos: PDF, Diapositivas (.eslide, .json, .ppt), Imágenes (JPG, PNG), Videos (MP4) y Audios (MP3)',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppColors.textMuted.withValues(alpha: 0.8), fontSize: 10),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  await openAppSettings();
+                },
+                icon: const Icon(Icons.security_rounded, size: 15),
+                label: const Text('¿No aparecen archivos? Conceder Acceso Total en Ajustes'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.primary,
+                  side: const BorderSide(color: AppColors.primary, width: 1.0),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }
