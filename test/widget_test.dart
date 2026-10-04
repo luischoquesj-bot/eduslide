@@ -18,8 +18,8 @@ void main() {
     expect(find.text(AppStrings.welcomeTitle), findsOneWidget);
     expect(find.text(AppStrings.startFreeWhiteboard), findsOneWidget);
     expect(find.text(AppStrings.exploreMaterials), findsOneWidget);
-    // Validar presencia del botón de Enlazar Control en la barra flotante
-    expect(find.text('Enlazar Control'), findsOneWidget);
+    // Validar presencia del botón compacto de Enlazar Control (ícono QR) en la barra flotante
+    expect(find.byIcon(Icons.qr_code_rounded), findsOneWidget);
   });
 
   testWidgets('EduSlideApp renderiza lanzador móvil y opciones en pantalla vertical de smartphone', (WidgetTester tester) async {

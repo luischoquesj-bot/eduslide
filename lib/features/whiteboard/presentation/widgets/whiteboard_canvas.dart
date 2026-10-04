@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
+import '../../domain/utils/shape_recognizer.dart';
 
 /// Modelo de datos para un trazo individual en la pizarra.
 class WhiteboardStroke {
@@ -55,10 +57,21 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
   // Posición del cursor del borrador para feedback visual
   Offset? _eraserFeedbackPos;
 
+  // Control de gesto "Draw & Hold" para auto-enderezado geométrico
+  Timer? _holdTimer;
+  Offset? _lastHoldPosition;
+  bool _isShapeLocked = false;
+
   @override
   void initState() {
     super.initState();
     _syncColorWithMode();
+  }
+
+  @override
+  void dispose() {
+    _holdTimer?.cancel();
+    super.dispose();
   }
 
   /// Sincroniza el color predeterminado del trazo según el modo de pizarra
@@ -89,9 +102,13 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
         _eraserFeedbackPos = details.localPosition;
       });
     } else {
+      _holdTimer?.cancel();
+      _isShapeLocked = false;
+      _lastHoldPosition = details.localPosition;
       setState(() {
         _currentPoints = [details.localPosition];
       });
+      _scheduleHoldTimer();
     }
   }
 
@@ -102,13 +119,24 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
         _eraserFeedbackPos = details.localPosition;
       });
     } else {
-      setState(() {
-        _currentPoints.add(details.localPosition);
-      });
+      if (!_isShapeLocked) {
+        setState(() {
+          _currentPoints.add(details.localPosition);
+        });
+
+        // Si el usuario continúa dibujando y se mueve más de 6 px, reiniciar el temporizador de Hold
+        if (_lastHoldPosition == null ||
+            (details.localPosition - _lastHoldPosition!).distance > 6.0) {
+          _lastHoldPosition = details.localPosition;
+          _scheduleHoldTimer();
+        }
+      }
     }
   }
 
   void _onPanEnd(DragEndDetails details) {
+    _holdTimer?.cancel();
+    _holdTimer = null;
     if (_isEraser) {
       setState(() {
         _eraserFeedbackPos = null;
@@ -123,6 +151,27 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
           ),
         );
         _currentPoints = [];
+        _isShapeLocked = false;
+        _lastHoldPosition = null;
+      });
+    }
+  }
+
+  /// Inicia el temporizador de Draw & Hold (~480 ms inmóvil al final del trazo)
+  void _scheduleHoldTimer() {
+    _holdTimer?.cancel();
+    _holdTimer = Timer(const Duration(milliseconds: 480), _triggerDrawAndHold);
+  }
+
+  /// Analiza los puntos acumulados y transforma en vivo el trazo en figura perfecta
+  void _triggerDrawAndHold() {
+    if (!mounted || _isEraser || _currentPoints.length < 5 || _isShapeLocked) return;
+
+    final recognized = ShapeRecognizer.recognize(_currentPoints);
+    if (recognized != null) {
+      setState(() {
+        _currentPoints = recognized;
+        _isShapeLocked = true;
       });
     }
   }
@@ -180,6 +229,9 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
 
   /// Borra todo lo rayado con marcador dejando el lienzo completamente limpio
   void _clearCanvas() {
+    _holdTimer?.cancel();
+    _isShapeLocked = false;
+    _lastHoldPosition = null;
     setState(() {
       _strokes.clear();
       _currentPoints.clear();
@@ -693,11 +745,22 @@ class _StrokePainter extends CustomPainter {
       return;
     }
 
+    if (points.length == 2) {
+      canvas.drawLine(points.first, points.last, paint);
+      return;
+    }
+
+    // Suavizado Bézier continuo con interpolación de puntos medios para evitar bordes dentados
     final path = Path();
     path.moveTo(points.first.dx, points.first.dy);
-    for (int i = 1; i < points.length; i++) {
-      path.lineTo(points[i].dx, points[i].dy);
+    for (int i = 1; i < points.length - 1; i++) {
+      final p0 = points[i];
+      final p1 = points[i + 1];
+      final midX = (p0.dx + p1.dx) / 2.0;
+      final midY = (p0.dy + p1.dy) / 2.0;
+      path.quadraticBezierTo(p0.dx, p0.dy, midX, midY);
     }
+    path.lineTo(points.last.dx, points.last.dy);
     canvas.drawPath(path, paint);
   }
 

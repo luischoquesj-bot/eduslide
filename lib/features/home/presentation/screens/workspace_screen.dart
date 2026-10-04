@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
@@ -639,7 +640,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     final allResources = [
       ...?_currentTopic?.leftPanelResources,
       ...?_currentTopic?.rightPanelResources,
-    ];
+    ].where((r) => r.type != ResourceType.xlsx && r.type != ResourceType.pptx).toList();
 
     return Container(
       decoration: BoxDecoration(
@@ -742,7 +743,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                     physics: const BouncingScrollPhysics(),
                     gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
                       maxCrossAxisExtent: 140,
-                      childAspectRatio: 0.95,
+                      childAspectRatio: 0.92,
                       crossAxisSpacing: 8,
                       mainAxisSpacing: 8,
                     ),
@@ -773,20 +774,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
+                              // Miniatura visual realista de alta fidelidad
                               Expanded(
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(6),
-                                  child: Container(
-                                    color: item.accentColor.withValues(alpha: 0.12),
-                                    child: Center(
-                                      child: Icon(
-                                        item.icon,
-                                        size: 28,
-                                        color: item.accentColor,
-                                      ),
-                                    ),
-                                  ),
-                                ),
+                                child: _buildSplitThumbnail(item),
                               ),
                               const SizedBox(height: 4),
                               Text(
@@ -824,6 +814,250 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                   ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Construye miniaturas visuales reales para la vista dividida (imágenes reales, maquetas de documentos Word/PDF, etc.)
+  Widget _buildSplitThumbnail(ResourceItem item) {
+    if (item.type == ResourceType.image) {
+      final file = File(item.path);
+      if (file.existsSync()) {
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Image.file(
+                file,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) =>
+                    _buildFallbackIconThumbnail(item),
+              ),
+              Positioned(
+                top: 2,
+                right: 2,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: Colors.black87,
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                  child: Text(
+                    item.extension.toUpperCase().replaceAll('.', ''),
+                    style: const TextStyle(
+                      fontSize: 6.5,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.accentGreen,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+    } else if (item.type == ResourceType.video) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFF0F172A),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppColors.secondary.withValues(alpha: 0.25),
+                Colors.black.withValues(alpha: 0.75),
+              ],
+            ),
+          ),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              const Icon(
+                Icons.play_circle_fill_rounded,
+                size: 26,
+                color: AppColors.secondary,
+              ),
+              Positioned(
+                top: 2,
+                right: 2,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: Colors.black87,
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                  child: const Text(
+                    'VIDEO',
+                    style: TextStyle(fontSize: 6.0, fontWeight: FontWeight.bold, color: AppColors.secondary),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    } else if (item.type == ResourceType.pdf || item.type == ResourceType.docx) {
+      final bool isPdf = item.type == ResourceType.pdf;
+      final Color badgeColor = isPdf ? const Color(0xFFE53935) : const Color(0xFF1E88E5);
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: Container(
+          decoration: BoxDecoration(
+            color: isPdf ? const Color(0xFF2B1D24) : const Color(0xFF16233B),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: badgeColor.withValues(alpha: 0.4),
+              width: 0.8,
+            ),
+          ),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              // Maqueta de hoja de documento con membrete y líneas de texto
+              Positioned(
+                top: 4,
+                left: 6,
+                right: 6,
+                bottom: 4,
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 14,
+                            height: 3,
+                            decoration: BoxDecoration(
+                              color: badgeColor,
+                              borderRadius: BorderRadius.circular(1),
+                            ),
+                          ),
+                          const SizedBox(width: 3),
+                          Container(
+                            width: 8,
+                            height: 3,
+                            decoration: BoxDecoration(
+                              color: badgeColor.withValues(alpha: 0.5),
+                              borderRadius: BorderRadius.circular(1),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      for (int i = 0; i < 4; i++) ...[
+                        Container(
+                          width: double.infinity,
+                          height: 2,
+                          color: Colors.white.withValues(alpha: 0.20),
+                        ),
+                        const SizedBox(height: 2.5),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              Icon(
+                item.icon,
+                size: 20,
+                color: badgeColor,
+              ),
+              Positioned(
+                top: 2,
+                right: 2,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: Colors.black87,
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                  child: Text(
+                    isPdf ? 'PDF' : 'DOCX',
+                    style: TextStyle(
+                      fontSize: 6.5,
+                      fontWeight: FontWeight.bold,
+                      color: badgeColor,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    } else if (item.type == ResourceType.slide) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(6),
+        child: Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E293B),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: AppColors.primary.withValues(alpha: 0.4),
+              width: 0.8,
+            ),
+          ),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Positioned(
+                top: 4,
+                left: 6,
+                right: 6,
+                bottom: 4,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: Colors.white12),
+                  ),
+                ),
+              ),
+              const Icon(Icons.slideshow_rounded, size: 22, color: AppColors.primary),
+              Positioned(
+                top: 2,
+                right: 2,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: Colors.black87,
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                  child: const Text(
+                    'SLIDE',
+                    style: TextStyle(fontSize: 6.0, fontWeight: FontWeight.bold, color: AppColors.primary),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return _buildFallbackIconThumbnail(item);
+  }
+
+  Widget _buildFallbackIconThumbnail(ResourceItem item) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        color: item.accentColor.withValues(alpha: 0.12),
+        child: Center(
+          child: Icon(
+            item.icon,
+            size: 26,
+            color: item.accentColor,
+          ),
+        ),
       ),
     );
   }
@@ -904,35 +1138,21 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
               color: AppColors.borderSubtle,
             ),
 
-            // Opción 2: Enlazar Control (Modal QR con WebSocket)
-            InkWell(
-              onTap: () => QrPairingDialog.show(context),
-              borderRadius: const BorderRadius.horizontal(right: Radius.circular(20)),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.qr_code_rounded,
-                      size: 13,
-                      color: _isRemoteConnected
-                          ? AppColors.accentGreen
-                          : AppColors.secondary,
-                    ),
-                    const SizedBox(width: 5),
-                    Text(
-                      'Enlazar Control',
-                      style: TextStyle(
-                        color: _isRemoteConnected
-                            ? AppColors.accentGreen
-                            : AppColors.textPrimary,
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.2,
-                      ),
-                    ),
-                  ],
+            // Opción 2: Enlazar Control (Solo ícono QR compacto)
+            Tooltip(
+              message: 'Enlazar Control Remoto (QR)',
+              child: InkWell(
+                onTap: () => QrPairingDialog.show(context),
+                borderRadius: const BorderRadius.horizontal(right: Radius.circular(20)),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                  child: Icon(
+                    Icons.qr_code_rounded,
+                    size: 15,
+                    color: _isRemoteConnected
+                        ? AppColors.accentGreen
+                        : AppColors.secondary,
+                  ),
                 ),
               ),
             ),

@@ -65,8 +65,9 @@ class _LeftMediaCarouselState extends State<LeftMediaCarousel> {
 
   String? _selectedId;
 
-  List<ResourceItem> get _items =>
-      widget.resources ?? _fallbackResources;
+  List<ResourceItem> get _items => (widget.resources ?? _fallbackResources)
+      .where((r) => r.type != ResourceType.xlsx && r.type != ResourceType.pptx)
+      .toList();
 
   @override
   Widget build(BuildContext context) {

@@ -104,7 +104,7 @@ class MobileLauncherScreen extends StatelessWidget {
                         context,
                         title: 'Usar como mando',
                         subtitle: 'Controla diapositivas, PDFs, videos y herramientas de pizarra a distancia desde tu móvil.',
-                        badge: 'Control Wi-Fi',
+                        badge: 'Control\nWi-Fi',
                         icon: Icons.settings_remote_rounded,
                         accentColor: AppColors.primary,
                         onTap: () {
@@ -122,7 +122,7 @@ class MobileLauncherScreen extends StatelessWidget {
                         context,
                         title: 'Usar HDMI o Duplicador',
                         subtitle: 'Conecta tu móvil a un proyector por cable o pantalla inalámbrica. Rota a horizontal para ver el espacio completo.',
-                        badge: 'Vista Proyector',
+                        badge: 'Vista\nProyector',
                         icon: Icons.tv_rounded,
                         accentColor: AppColors.secondary,
                         onTap: () => _startHdmiMode(context),
@@ -183,7 +183,7 @@ class MobileLauncherScreen extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(16),
         child: Container(
-          padding: const EdgeInsets.all(18),
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: AppColors.surface,
             borderRadius: BorderRadius.circular(16),
@@ -200,53 +200,66 @@ class MobileLauncherScreen extends StatelessWidget {
             ],
           ),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Ícono distintivo en contenedor circular
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: accentColor.withValues(alpha: 0.15),
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: accentColor.withValues(alpha: 0.4),
-                    width: 1.2,
-                  ),
+              // Ícono distintivo con etiqueta ubicada debajo que no excede su ancho
+              SizedBox(
+                width: 56,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 52,
+                      height: 52,
+                      decoration: BoxDecoration(
+                        color: accentColor.withValues(alpha: 0.15),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: accentColor.withValues(alpha: 0.4),
+                          width: 1.2,
+                        ),
+                      ),
+                      child: Center(
+                        child: Icon(icon, size: 26, color: accentColor),
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Container(
+                      width: 54,
+                      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: accentColor.withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: accentColor.withValues(alpha: 0.35),
+                          width: 0.8,
+                        ),
+                      ),
+                      child: Text(
+                        badge,
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        style: TextStyle(
+                          fontSize: 8.5,
+                          fontWeight: FontWeight.bold,
+                          color: accentColor,
+                          height: 1.15,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                child: Icon(icon, size: 28, color: accentColor),
               ),
               const SizedBox(width: 14),
 
-              // Contenido textual y badge
+              // Contenido textual
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            title,
-                            style: AppTextStyles.cardTitle.copyWith(fontSize: 15),
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: accentColor.withValues(alpha: 0.18),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            badge,
-                            style: TextStyle(
-                              fontSize: 9.5,
-                              fontWeight: FontWeight.bold,
-                              color: accentColor,
-                            ),
-                          ),
-                        ),
-                      ],
+                    Text(
+                      title,
+                      style: AppTextStyles.cardTitle.copyWith(fontSize: 15),
                     ),
                     const SizedBox(height: 6),
                     Text(

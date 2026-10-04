@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
-import 'package:permission_handler/permission_handler.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_text_styles.dart';
 import '../../data/storage_service.dart';
@@ -319,15 +318,49 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
       color: AppColors.surfaceElevated.withValues(alpha: 0.4),
       child: Row(
         children: [
-          IconButton(
-            icon: const Icon(Icons.arrow_upward_rounded, size: 16),
-            tooltip: 'Subir un nivel',
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-            onPressed: _canNavigateUp ? _navigateUp : null,
-            color: _canNavigateUp ? AppColors.primary : AppColors.textMuted,
+          // Botón Back / Subir nivel con borde prominente y espacio de interacción ergonómico
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: _canNavigateUp ? _navigateUp : null,
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: _canNavigateUp
+                      ? AppColors.primary.withValues(alpha: 0.16)
+                      : AppColors.surfaceLight.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: _canNavigateUp
+                        ? AppColors.primary.withValues(alpha: 0.75)
+                        : AppColors.borderSubtle,
+                    width: 1.2,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.arrow_back_rounded,
+                      size: 15,
+                      color: _canNavigateUp ? AppColors.primary : AppColors.textMuted,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Atrás',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: _canNavigateUp ? AppColors.primary : AppColors.textMuted,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
-          const SizedBox(width: 6),
+          const SizedBox(width: 10),
           const Icon(Icons.folder_open_rounded, size: 15, color: AppColors.textMuted),
           const SizedBox(width: 6),
           Expanded(
@@ -375,20 +408,6 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
                 'Formatos: PDF, Diapositivas (.eslide, .json, .ppt), Imágenes (JPG, PNG), Videos (MP4) y Audios (MP3)',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: AppColors.textMuted.withValues(alpha: 0.8), fontSize: 10),
-              ),
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: () async {
-                  await openAppSettings();
-                },
-                icon: const Icon(Icons.security_rounded, size: 15),
-                label: const Text('¿No aparecen archivos? Conceder Acceso Total en Ajustes'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.primary,
-                  side: const BorderSide(color: AppColors.primary, width: 1.0),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
-                ),
               ),
             ],
           ),
