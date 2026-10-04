@@ -22,6 +22,9 @@ class _RemotePairingScreenState extends State<RemotePairingScreen> {
   bool _isConnecting = false;
   bool _isConnected = false;
   String? _errorMessage;
+  int _selectedPairingMode = 0; // 0 = Wi-Fi, 1 = Bluetooth
+  String? _connectedDeviceName;
+  String? _activeResourceOnProjector;
 
   // Estado del mando remoto
   bool _isPlaying = true;
@@ -58,7 +61,15 @@ class _RemotePairingScreenState extends State<RemotePairingScreen> {
 
       ws.listen(
         (data) {
-          // Escuchar eventos provenientes del proyector si fuera necesario
+          // Escuchar eventos bidireccionales provenientes del proyector
+          try {
+            final decoded = jsonDecode(data.toString());
+            if (decoded is Map<String, dynamic>) {
+              _handleIncomingProjectorMessage(decoded);
+            }
+          } catch (e) {
+            debugPrint('Error procesando mensaje bidireccional: $e');
+          }
         },
         onDone: () {
           if (mounted) {
@@ -83,10 +94,29 @@ class _RemotePairingScreenState extends State<RemotePairingScreen> {
         setState(() {
           _isConnecting = false;
           _isConnected = false;
-          _errorMessage = 'No se pudo conectar a $targetUrl.\nVerifica que ambos dispositivos estén en la misma red Wi-Fi o Hotspot.';
+          _errorMessage = 'No se pudo conectar a $targetUrl.\n'
+              '${_selectedPairingMode == 0 ? 'Verifica que ambos dispositivos estén en el mismo Wi-Fi o Hotspot.' : 'Verifica que ambos dispositivos estén vinculados por Bluetooth con "Anclaje de red Bluetooth" activo.'}';
         });
       }
     }
+  }
+
+  void _handleIncomingProjectorMessage(Map<String, dynamic> msg) {
+    if (!mounted) return;
+    setState(() {
+      if (msg['device'] != null) {
+        _connectedDeviceName = msg['device'].toString();
+      }
+      if (msg['activeResource'] != null) {
+        _activeResourceOnProjector = msg['activeResource'].toString();
+      }
+      if (msg['isPenActive'] is bool) {
+        _isPenActive = msg['isPenActive'] as bool;
+      }
+      if (msg['isEraserActive'] is bool) {
+        _isEraserActive = msg['isEraserActive'] as bool;
+      }
+    });
   }
 
   /// Envía un comando en formato JSON al proyector
@@ -172,18 +202,116 @@ class _RemotePairingScreenState extends State<RemotePairingScreen> {
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 12.5, color: AppColors.textMuted),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 18),
+
+          // Selector de Canal de Comunicación: Wi-Fi vs Red Bluetooth
+          Container(
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.borderSubtle),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: () {
+                      setState(() {
+                        _selectedPairingMode = 0;
+                        if (_urlController.text.contains('192.168.44')) {
+                          _urlController.text = 'ws://192.168.43.1:8080';
+                        }
+                      });
+                    },
+                    borderRadius: BorderRadius.circular(9),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: BoxDecoration(
+                        color: _selectedPairingMode == 0 ? AppColors.primary : Colors.transparent,
+                        borderRadius: BorderRadius.circular(9),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.wifi_rounded,
+                            size: 15,
+                            color: _selectedPairingMode == 0 ? Colors.white : AppColors.textSecondary,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Modo Wi-Fi',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.bold,
+                              color: _selectedPairingMode == 0 ? Colors.white : AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: InkWell(
+                    onTap: () {
+                      setState(() {
+                        _selectedPairingMode = 1;
+                        if (_urlController.text.contains('192.168.43')) {
+                          _urlController.text = 'ws://192.168.44.1:8080';
+                        }
+                      });
+                    },
+                    borderRadius: BorderRadius.circular(9),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: BoxDecoration(
+                        color: _selectedPairingMode == 1 ? AppColors.secondary : Colors.transparent,
+                        borderRadius: BorderRadius.circular(9),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.bluetooth_rounded,
+                            size: 15,
+                            color: _selectedPairingMode == 1 ? Colors.white : AppColors.textSecondary,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Modo Bluetooth',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.bold,
+                              color: _selectedPairingMode == 1 ? Colors.white : AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
 
           // Campo de texto de dirección IP / WebSocket
           TextField(
             controller: _urlController,
             style: const TextStyle(color: Colors.white, fontFamily: 'monospace'),
             decoration: InputDecoration(
-              labelText: 'Enlace WebSocket del Proyector',
+              labelText: _selectedPairingMode == 0 ? 'Enlace Wi-Fi del Proyector' : 'Enlace Bluetooth (PAN) del Proyector',
               labelStyle: const TextStyle(color: AppColors.textSecondary),
-              hintText: 'ws://192.168.43.1:8080',
+              hintText: _selectedPairingMode == 0 ? 'ws://192.168.43.1:8080' : 'ws://192.168.44.1:8080',
               hintStyle: const TextStyle(color: AppColors.textMuted),
-              prefixIcon: const Icon(Icons.wifi_tethering_rounded, color: AppColors.primary),
+              prefixIcon: Icon(
+                _selectedPairingMode == 0 ? Icons.wifi_tethering_rounded : Icons.bluetooth_connected_rounded,
+                color: _selectedPairingMode == 0 ? AppColors.primary : AppColors.secondary,
+              ),
               filled: true,
               fillColor: AppColors.surface,
               border: OutlineInputBorder(
@@ -192,7 +320,10 @@ class _RemotePairingScreenState extends State<RemotePairingScreen> {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
-                borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                borderSide: BorderSide(
+                  color: _selectedPairingMode == 0 ? AppColors.primary : AppColors.secondary,
+                  width: 1.5,
+                ),
               ),
             ),
           ),
@@ -207,10 +338,12 @@ class _RemotePairingScreenState extends State<RemotePairingScreen> {
                     height: 18,
                     child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                   )
-                : const Icon(Icons.link_rounded),
-            label: Text(_isConnecting ? 'Conectando...' : 'Conectar con Proyector'),
+                : Icon(_selectedPairingMode == 0 ? Icons.wifi_rounded : Icons.bluetooth_rounded),
+            label: Text(_isConnecting
+                ? 'Conectando...'
+                : (_selectedPairingMode == 0 ? 'Conectar por Wi-Fi' : 'Conectar por Bluetooth')),
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
+              backgroundColor: _selectedPairingMode == 0 ? AppColors.primary : AppColors.secondary,
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 14),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -255,19 +388,25 @@ class _RemotePairingScreenState extends State<RemotePairingScreen> {
             ),
           ],
 
-          const SizedBox(height: 28),
+          const SizedBox(height: 24),
           const Divider(color: AppColors.borderSubtle),
-          const SizedBox(height: 14),
-          const Text(
-            'Instrucciones didácticas:',
-            style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimary, fontSize: 12),
+          const SizedBox(height: 12),
+          Text(
+            _selectedPairingMode == 0
+                ? 'Instrucciones para Modo Wi-Fi:'
+                : 'Instrucciones para Modo Bluetooth:',
+            style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimary, fontSize: 12),
           ),
           const SizedBox(height: 6),
-          const Text(
-            '1. En el proyector, pulsa la píldora inferior "Control de Espacio" y selecciona "Enlazar Control".\n'
-            '2. Copia o introduce la dirección que aparece en pantalla (ej. ws://192.168.1.15:8080).\n'
-            '3. Presiona "Conectar" y utiliza los botones gigantes para pasar páginas o pausar videos.',
-            style: TextStyle(fontSize: 11, color: AppColors.textMuted, height: 1.45),
+          Text(
+            _selectedPairingMode == 0
+                ? '1. Conecta tu teléfono al mismo Wi-Fi o Hotspot que el proyector.\n'
+                  '2. En el proyector, pulsa el botón QR en la barra inferior para ver la dirección.\n'
+                  '3. Pulsa "Conectar por Wi-Fi" o escanea el QR con tu cámara.'
+                : '1. Empareja teléfono y proyector por Bluetooth en los Ajustes de Android.\n'
+                  '2. En tu móvil activa "Anclaje de red por Bluetooth" (Bluetooth Tethering).\n'
+                  '3. En el proyector selecciona "Red Bluetooth" en el diálogo QR y pulsa "Conectar por Bluetooth".',
+            style: const TextStyle(fontSize: 11, color: AppColors.textMuted, height: 1.45),
           ),
         ],
       ),
@@ -338,32 +477,58 @@ class _RemotePairingScreenState extends State<RemotePairingScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Barra de estado de conexión
+          // Barra de estado de conexión con modo activo (Wi-Fi / Bluetooth) y sincronización bidireccional
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
             decoration: BoxDecoration(
               color: AppColors.accentGreen.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(10),
               border: Border.all(color: AppColors.accentGreen.withValues(alpha: 0.4)),
             ),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Container(
-                  width: 8,
-                  height: 8,
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: AppColors.accentGreen,
-                  ),
+                Icon(
+                  _selectedPairingMode == 0 ? Icons.wifi_rounded : Icons.bluetooth_rounded,
+                  size: 16,
+                  color: AppColors.accentGreen,
                 ),
                 const SizedBox(width: 8),
-                Text(
-                  'Conectado a ${_urlController.text}',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Enlace Bidireccional Activo (${_selectedPairingMode == 0 ? 'Wi-Fi' : 'Red Bluetooth'})',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.accentGreen,
+                        ),
+                      ),
+                      if (_connectedDeviceName != null || _activeResourceOnProjector != null)
+                        Text(
+                          '${_connectedDeviceName ?? 'Proyector'}${_activeResourceOnProjector != null ? ' • ${_activeResourceOnProjector!}' : ''}',
+                          style: const TextStyle(fontSize: 9.5, color: AppColors.textMuted),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
                     color: AppColors.accentGreen,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    _selectedPairingMode == 0 ? 'WIFI' : 'BT',
+                    style: const TextStyle(
+                      fontSize: 8.5,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
                   ),
                 ),
               ],

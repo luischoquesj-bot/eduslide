@@ -18,15 +18,21 @@ class RemoteServerService {
   final ValueNotifier<bool> isClientConnected = ValueNotifier<bool>(false);
   final ValueNotifier<bool> isServerRunning = ValueNotifier<bool>(false);
 
-  String _localIp = '127.0.0.1';
+  String _localIp = '192.168.43.1';
+  String _wifiIp = '192.168.43.1';
+  String _bluetoothIp = '192.168.44.1';
   int _port = 8080;
 
   Stream<Map<String, dynamic>> get onCommand => _commandController.stream;
   String get serverUrl => 'ws://$_localIp:$_port';
+  String get wifiUrl => 'ws://$_wifiIp:$_port';
+  String get bluetoothUrl => 'ws://$_bluetoothIp:$_port';
   String get localIp => _localIp;
+  String get wifiIp => _wifiIp;
+  String get bluetoothIp => _bluetoothIp;
   int get port => _port;
 
-  /// Detecta la dirección IPv4 local asignada (Wi-Fi o Punto de Acceso)
+  /// Detecta las direcciones IPv4 asignadas a Wi-Fi/Hotspot y a Red Bluetooth (Bluetooth PAN)
   Future<String> detectLocalIp() async {
     try {
       final interfaces = await NetworkInterface.list(
@@ -35,17 +41,21 @@ class RemoteServerService {
       );
 
       for (final interface in interfaces) {
+        final name = interface.name.toLowerCase();
         for (final addr in interface.addresses) {
           if (!addr.isLoopback && addr.type == InternetAddressType.IPv4) {
-            _localIp = addr.address;
-            return _localIp;
+            if (name.contains('bt') || name.contains('bnep') || name.contains('blue')) {
+              _bluetoothIp = addr.address;
+            } else {
+              _wifiIp = addr.address;
+              _localIp = addr.address;
+            }
           }
         }
       }
     } catch (e) {
-      debugPrint('Error detectando IP local: $e');
+      debugPrint('Error detectando interfaces de red: $e');
     }
-    _localIp = '192.168.43.1'; // Fallback a IP común de punto de acceso móvil
     return _localIp;
   }
 

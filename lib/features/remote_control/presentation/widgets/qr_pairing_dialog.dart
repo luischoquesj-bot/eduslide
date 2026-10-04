@@ -24,7 +24,10 @@ class QrPairingDialog extends StatefulWidget {
 class _QrPairingDialogState extends State<QrPairingDialog> {
   final RemoteServerService _serverService = RemoteServerService();
   bool _isLoading = true;
-  String _wsUrl = '';
+  int _selectedMode = 0; // 0 = Wi-Fi / Hotspot, 1 = Bluetooth PAN
+
+  String get _currentUrl =>
+      _selectedMode == 0 ? _serverService.wifiUrl : _serverService.bluetoothUrl;
 
   @override
   void initState() {
@@ -36,7 +39,6 @@ class _QrPairingDialogState extends State<QrPairingDialog> {
     await _serverService.startServer();
     if (mounted) {
       setState(() {
-        _wsUrl = _serverService.serverUrl;
         _isLoading = false;
       });
     }
@@ -51,9 +53,9 @@ class _QrPairingDialogState extends State<QrPairingDialog> {
       backgroundColor: Colors.transparent,
       insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
       child: Container(
-        width: 440,
+        width: 450,
         constraints: BoxConstraints(
-          maxHeight: media.size.height * 0.90,
+          maxHeight: media.size.height * 0.92,
         ),
         decoration: BoxDecoration(
           color: AppColors.surface,
@@ -102,7 +104,7 @@ class _QrPairingDialogState extends State<QrPairingDialog> {
                           style: AppTextStyles.cardTitle,
                         ),
                         Text(
-                          'Conexión local por Wi-Fi o Zona Wi-Fi',
+                          'Comunicación dual Wi-Fi Local o Red Bluetooth',
                           style: TextStyle(fontSize: 10.5, color: AppColors.textMuted),
                         ),
                       ],
@@ -118,6 +120,89 @@ class _QrPairingDialogState extends State<QrPairingDialog> {
               ),
             ),
             const Divider(color: AppColors.borderSubtle, height: 1),
+
+            // Selector interactivo de canal de comunicación: Wi-Fi vs Bluetooth
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: Container(
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceElevated,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.borderSubtle),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: InkWell(
+                        onTap: () => setState(() => _selectedMode = 0),
+                        borderRadius: BorderRadius.circular(9),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
+                          padding: const EdgeInsets.symmetric(vertical: 7),
+                          decoration: BoxDecoration(
+                            color: _selectedMode == 0 ? AppColors.primary : Colors.transparent,
+                            borderRadius: BorderRadius.circular(9),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.wifi_rounded,
+                                size: 15,
+                                color: _selectedMode == 0 ? Colors.white : AppColors.textSecondary,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Wi-Fi / Zona Wi-Fi',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: _selectedMode == 0 ? Colors.white : AppColors.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: InkWell(
+                        onTap: () => setState(() => _selectedMode = 1),
+                        borderRadius: BorderRadius.circular(9),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
+                          padding: const EdgeInsets.symmetric(vertical: 7),
+                          decoration: BoxDecoration(
+                            color: _selectedMode == 1 ? AppColors.secondary : Colors.transparent,
+                            borderRadius: BorderRadius.circular(9),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.bluetooth_rounded,
+                                size: 15,
+                                color: _selectedMode == 1 ? Colors.white : AppColors.textSecondary,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Red Bluetooth',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: _selectedMode == 1 ? Colors.white : AppColors.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
 
             // 2. Contenido Central: Código QR e Indicaciones
             Flexible(
@@ -147,17 +232,17 @@ class _QrPairingDialogState extends State<QrPairingDialog> {
                               ],
                             ),
                             child: QrImageView(
-                              data: _wsUrl,
+                              data: _currentUrl,
                               version: QrVersions.auto,
-                              size: isCompact ? 130 : 160,
+                              size: isCompact ? 125 : 150,
                               backgroundColor: Colors.white,
                             ),
                           ),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 10),
 
                           // Enlace de texto visible y botón de copiado
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                             decoration: BoxDecoration(
                               color: AppColors.surfaceLight,
                               borderRadius: BorderRadius.circular(10),
@@ -165,11 +250,15 @@ class _QrPairingDialogState extends State<QrPairingDialog> {
                             ),
                             child: Row(
                               children: [
-                                const Icon(Icons.link_rounded, size: 16, color: AppColors.primary),
+                                Icon(
+                                  _selectedMode == 0 ? Icons.wifi_rounded : Icons.bluetooth_rounded,
+                                  size: 16,
+                                  color: _selectedMode == 0 ? AppColors.primary : AppColors.secondary,
+                                ),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: SelectableText(
-                                    _wsUrl,
+                                    _currentUrl,
                                     style: const TextStyle(
                                       fontFamily: 'monospace',
                                       fontSize: 12,
@@ -184,7 +273,7 @@ class _QrPairingDialogState extends State<QrPairingDialog> {
                                   padding: EdgeInsets.zero,
                                   constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                                   onPressed: () {
-                                    Clipboard.setData(ClipboardData(text: _wsUrl));
+                                    Clipboard.setData(ClipboardData(text: _currentUrl));
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       const SnackBar(
                                         content: Text('Enlace copiado al portapapeles'),
@@ -197,7 +286,7 @@ class _QrPairingDialogState extends State<QrPairingDialog> {
                               ],
                             ),
                           ),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 10),
 
                           // Estado de conexión reactivo del mando
                           ValueListenableBuilder<bool>(
@@ -249,12 +338,16 @@ class _QrPairingDialogState extends State<QrPairingDialog> {
                           ),
                           const SizedBox(height: 10),
 
-                          // Pasos explicativos para el docente
-                          const Text(
-                            '1. Conecta tu teléfono a la misma red Wi-Fi o Hotspot del proyector.\n'
-                            '2. Abre EduSlide en tu móvil y selecciona "Usar como mando".\n'
-                            '3. Escanea el código QR o introduce la dirección indicada arriba.',
-                            style: TextStyle(fontSize: 10.5, color: AppColors.textMuted, height: 1.4),
+                          // Pasos explicativos contextuales para el docente
+                          Text(
+                            _selectedMode == 0
+                                ? '1. Conecta tu teléfono a la misma red Wi-Fi o Hotspot del proyector.\n'
+                                  '2. Abre EduSlide en tu móvil y selecciona "Usar como mando".\n'
+                                  '3. Escanea el código QR o introduce la dirección indicada arriba.'
+                                : '1. Empareja tu teléfono con el proyector por Bluetooth en los Ajustes de Android.\n'
+                                  '2. En tu móvil activa "Anclaje de red por Bluetooth" (Bluetooth Tethering).\n'
+                                  '3. En el mando de EduSlide selecciona "Modo Bluetooth" y pulsa Conectar.',
+                            style: const TextStyle(fontSize: 10.5, color: AppColors.textMuted, height: 1.4),
                           ),
                         ],
                       ),
