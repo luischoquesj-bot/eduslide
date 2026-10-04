@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:archive/archive.dart';
@@ -23,6 +24,7 @@ class InteractiveResourceViewer extends StatefulWidget {
   final bool isResourceOnLeft;
   final ValueChanged<bool>? onSideToggle;
   final VoidCallback? onExpandFull;
+  final bool showLayoutControls;
 
   const InteractiveResourceViewer({
     super.key,
@@ -33,6 +35,7 @@ class InteractiveResourceViewer extends StatefulWidget {
     this.isResourceOnLeft = false,
     this.onSideToggle,
     this.onExpandFull,
+    this.showLayoutControls = true,
   });
 
   @override
@@ -51,9 +54,11 @@ class _InteractiveResourceViewerState extends State<InteractiveResourceViewer>
   int _pdfTotalPages = 0;
   bool _pdfReady = false;
 
-  // Reproductor de Video real
+  // Reproductor de Video real con controles autocultables
   VideoPlayerController? _videoController;
   bool _isVideoInitialized = false;
+  bool _showVideoControls = true;
+  Timer? _videoControlsTimer;
 
   // Reproductor de Audio real (ExoPlayer nativo)
   VideoPlayerController? _audioController;
@@ -98,6 +103,10 @@ class _InteractiveResourceViewerState extends State<InteractiveResourceViewer>
   }
 
   void _disposeEngines() {
+    _videoControlsTimer?.cancel();
+    _videoControlsTimer = null;
+    _showVideoControls = true;
+
     _videoController?.dispose();
     _videoController = null;
     _isVideoInitialized = false;
@@ -113,6 +122,30 @@ class _InteractiveResourceViewerState extends State<InteractiveResourceViewer>
     _pdfTotalPages = 0;
   }
 
+  void _startVideoControlsTimer() {
+    _videoControlsTimer?.cancel();
+    if (_videoController?.value.isPlaying == true) {
+      _videoControlsTimer = Timer(const Duration(seconds: 3), () {
+        if (mounted && (_videoController?.value.isPlaying == true)) {
+          setState(() {
+            _showVideoControls = false;
+          });
+        }
+      });
+    }
+  }
+
+  void _toggleVideoControls() {
+    setState(() {
+      _showVideoControls = !_showVideoControls;
+    });
+    if (_showVideoControls) {
+      _startVideoControlsTimer();
+    } else {
+      _videoControlsTimer?.cancel();
+    }
+  }
+
   void _initResourceEngines() {
     final item = widget.resource;
     final file = File(item.path);
@@ -124,8 +157,10 @@ class _InteractiveResourceViewerState extends State<InteractiveResourceViewer>
           if (mounted) {
             setState(() {
               _isVideoInitialized = true;
+              _showVideoControls = true;
             });
             _videoController!.play();
+            _startVideoControlsTimer();
           }
         }).catchError((error) {
           debugPrint('Error inicializando video: $error');
@@ -326,51 +361,51 @@ class _InteractiveResourceViewerState extends State<InteractiveResourceViewer>
           ),
           const SizedBox(width: 6),
 
-          // Selector de porcentaje rápido (50% | 75% | 100%)
-          _buildRatioButtons(),
-          const SizedBox(width: 6),
-
-          // Conmutador de Lado (Izq / Der)
-          if (widget.onSideToggle != null)
-            Tooltip(
-              message: widget.isResourceOnLeft
-                  ? 'Colocar recurso a la derecha'
-                  : 'Colocar recurso a la izquierda',
-              child: InkWell(
-                onTap: () => widget.onSideToggle?.call(!widget.isResourceOnLeft),
-                borderRadius: BorderRadius.circular(6),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceLight.withValues(alpha: 0.6),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: AppColors.borderHighlight, width: 0.8),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        widget.isResourceOnLeft
-                            ? Icons.arrow_back_rounded
-                            : Icons.arrow_forward_rounded,
-                        size: 12,
-                        color: AppColors.primary,
-                      ),
-                      const SizedBox(width: 2),
-                      Text(
-                        widget.isResourceOnLeft ? 'Izq' : 'Der',
-                        style: const TextStyle(
-                          fontSize: 9.5,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textPrimary,
+          // Selector de porcentaje rápido y conmutador de lado (solo si no es overlay fijo)
+          if (widget.showLayoutControls) ...[
+            _buildRatioButtons(),
+            const SizedBox(width: 6),
+            if (widget.onSideToggle != null)
+              Tooltip(
+                message: widget.isResourceOnLeft
+                    ? 'Colocar recurso a la derecha'
+                    : 'Colocar recurso a la izquierda',
+                child: InkWell(
+                  onTap: () => widget.onSideToggle?.call(!widget.isResourceOnLeft),
+                  borderRadius: BorderRadius.circular(6),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceLight.withValues(alpha: 0.6),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: AppColors.borderHighlight, width: 0.8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          widget.isResourceOnLeft
+                              ? Icons.arrow_back_rounded
+                              : Icons.arrow_forward_rounded,
+                          size: 12,
+                          color: AppColors.primary,
                         ),
-                      ),
-                    ],
+                        const SizedBox(width: 2),
+                        Text(
+                          widget.isResourceOnLeft ? 'Izq' : 'Der',
+                          style: const TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-          const SizedBox(width: 6),
+            const SizedBox(width: 6),
+          ],
 
           // Botón Cerrar (X) para retornar a pizarra completa
           Tooltip(
@@ -603,188 +638,185 @@ class _InteractiveResourceViewerState extends State<InteractiveResourceViewer>
     );
   }
 
-  /// 2. REPRODUCTOR REAL DE VIDEO DIDÁCTICO (Requisito 4)
+  /// 2. REPRODUCTOR REAL DE VIDEO DIDÁCTICO (Requisito 2)
+  /// Se ajusta responsivamente al lienzo y la botonera flotante se oculta automáticamente.
   Widget _buildVideoPlayer(ResourceItem item) {
     final bool hasController = _videoController != null && _isVideoInitialized;
 
     return Container(
       color: Colors.black,
-      child: Column(
+      width: double.infinity,
+      height: double.infinity,
+      child: Stack(
+        fit: StackFit.expand,
         children: [
-          // Escenario de Video Real
-          Expanded(
-            child: hasController
-                ? Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      Center(
-                        child: AspectRatio(
-                          aspectRatio: _videoController!.value.aspectRatio > 0
-                              ? _videoController!.value.aspectRatio
-                              : 16 / 9,
-                          child: VideoPlayer(_videoController!),
-                        ),
+          // 1. Escenario de Video Real ajustado automáticamente al espacio disponible
+          if (hasController)
+            Center(
+              child: AspectRatio(
+                aspectRatio: _videoController!.value.aspectRatio > 0
+                    ? _videoController!.value.aspectRatio
+                    : 16 / 9,
+                child: VideoPlayer(_videoController!),
+              ),
+            )
+          else
+            Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CircularProgressIndicator(color: AppColors.secondary),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Cargando video: ${item.name}',
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+
+          // 2. Capa táctil para alternar controles flotantes al tocar cualquier parte del video
+          if (hasController)
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: _toggleVideoControls,
+              ),
+            ),
+
+          // 3. Botonera inferior discreta dibujada ENCIMA del video (se oculta automáticamente)
+          if (hasController)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: AnimatedOpacity(
+                opacity: _showVideoControls ? 1.0 : 0.0,
+                duration: const Duration(milliseconds: 250),
+                child: IgnorePointer(
+                  ignoring: !_showVideoControls,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.bottomCenter,
+                        end: Alignment.topCenter,
+                        colors: [
+                          Colors.black.withValues(alpha: 0.88),
+                          Colors.black.withValues(alpha: 0.45),
+                          Colors.transparent,
+                        ],
                       ),
-                      // Botón central de pausa/play
-                      InkWell(
-                        onTap: () {
-                          setState(() {
-                            if (_videoController!.value.isPlaying) {
-                              _videoController!.pause();
-                            } else {
-                              _videoController!.play();
-                            }
-                          });
-                        },
-                        borderRadius: BorderRadius.circular(50),
-                        child: Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.35),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
+                    ),
+                    child: Row(
+                      children: [
+                        // Botón Reproducir / Pausar
+                        IconButton(
+                          icon: Icon(
                             _videoController!.value.isPlaying
                                 ? Icons.pause_rounded
                                 : Icons.play_arrow_rounded,
-                            size: 44,
                             color: Colors.white,
+                            size: 30,
+                          ),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                          onPressed: () {
+                            setState(() {
+                              if (_videoController!.value.isPlaying) {
+                                _videoController!.pause();
+                                _videoControlsTimer?.cancel();
+                              } else {
+                                _videoController!.play();
+                                _startVideoControlsTimer();
+                              }
+                            });
+                          },
+                        ),
+                        const SizedBox(width: 4),
+
+                        // Tiempo transcurrido
+                        Text(
+                          _formatDuration(_videoController!.value.position),
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
-                      ),
-                    ],
-                  )
-                : Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const CircularProgressIndicator(color: AppColors.secondary),
-                        const SizedBox(height: 12),
+
+                        // Línea de tiempo / Scrubber para adelantar o retrasar
+                        Expanded(
+                          child: SliderTheme(
+                            data: SliderTheme.of(context).copyWith(
+                              trackHeight: 3.5,
+                              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                              activeTrackColor: AppColors.secondary,
+                              inactiveTrackColor: Colors.white30,
+                              thumbColor: AppColors.secondary,
+                            ),
+                            child: Slider(
+                              value: _videoController!.value.position.inSeconds
+                                  .toDouble()
+                                  .clamp(
+                                    0.0,
+                                    _videoController!.value.duration.inSeconds.toDouble() > 0
+                                        ? _videoController!.value.duration.inSeconds.toDouble()
+                                        : 1.0,
+                                  ),
+                              min: 0.0,
+                              max: _videoController!.value.duration.inSeconds.toDouble() > 0
+                                  ? _videoController!.value.duration.inSeconds.toDouble()
+                                  : 1.0,
+                              onChangeStart: (_) {
+                                _videoControlsTimer?.cancel();
+                              },
+                              onChanged: (val) {
+                                _videoController!.seekTo(Duration(seconds: val.toInt()));
+                              },
+                              onChangeEnd: (_) {
+                                _startVideoControlsTimer();
+                              },
+                            ),
+                          ),
+                        ),
+
+                        // Tiempo total
                         Text(
-                          'Cargando video: ${item.name}',
-                          style: const TextStyle(color: Colors.white70, fontSize: 12),
+                          _formatDuration(_videoController!.value.duration),
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Colors.white70,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+
+                        // Control de volumen discreto
+                        IconButton(
+                          icon: Icon(
+                            _videoController!.value.volume > 0
+                                ? Icons.volume_up_rounded
+                                : Icons.volume_off_rounded,
+                            size: 18,
+                            color: Colors.white70,
+                          ),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+                          onPressed: () {
+                            setState(() {
+                              if (_videoController!.value.volume > 0) {
+                                _videoController!.setVolume(0.0);
+                              } else {
+                                _videoController!.setVolume(1.0);
+                              }
+                            });
+                          },
                         ),
                       ],
                     ),
                   ),
-          ),
-
-          // Barra interactiva de control de video
-          if (hasController)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: const BoxDecoration(
-                color: AppColors.surfaceElevated,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Scrubber (Barra de progreso del video)
-                  Row(
-                    children: [
-                      Text(
-                        _formatDuration(_videoController!.value.position),
-                        style: const TextStyle(fontSize: 10, color: AppColors.textSecondary),
-                      ),
-                      Expanded(
-                        child: SliderTheme(
-                          data: SliderTheme.of(context).copyWith(
-                            trackHeight: 3.5,
-                            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                            activeTrackColor: AppColors.secondary,
-                            inactiveTrackColor: AppColors.borderSubtle,
-                            thumbColor: AppColors.secondary,
-                          ),
-                          child: Slider(
-                            value: _videoController!.value.position.inSeconds
-                                .toDouble()
-                                .clamp(0.0, _videoController!.value.duration.inSeconds.toDouble()),
-                            min: 0.0,
-                            max: _videoController!.value.duration.inSeconds.toDouble() > 0
-                                ? _videoController!.value.duration.inSeconds.toDouble()
-                                : 1.0,
-                            onChanged: (val) {
-                              _videoController!.seekTo(Duration(seconds: val.toInt()));
-                            },
-                          ),
-                        ),
-                      ),
-                      Text(
-                        _formatDuration(_videoController!.value.duration),
-                        style: const TextStyle(fontSize: 10, color: AppColors.textSecondary),
-                      ),
-                    ],
-                  ),
-
-                  // Fila de acciones (Play, Retroceder 10s, Avanzar 10s, Velocidad, Volumen)
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
-                        children: [
-                          IconButton(
-                            icon: Icon(
-                              _videoController!.value.isPlaying
-                                  ? Icons.pause_rounded
-                                  : Icons.play_arrow_rounded,
-                              color: AppColors.secondary,
-                              size: 22,
-                            ),
-                            onPressed: () {
-                              setState(() {
-                                if (_videoController!.value.isPlaying) {
-                                  _videoController!.pause();
-                                } else {
-                                  _videoController!.play();
-                                }
-                              });
-                            },
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.replay_10_rounded, size: 18),
-                            onPressed: () {
-                              final newPos =
-                                  _videoController!.value.position - const Duration(seconds: 10);
-                              _videoController!.seekTo(newPos > Duration.zero ? newPos : Duration.zero);
-                            },
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.forward_10_rounded, size: 18),
-                            onPressed: () {
-                              final newPos =
-                                  _videoController!.value.position + const Duration(seconds: 10);
-                              _videoController!.seekTo(newPos);
-                            },
-                          ),
-                        ],
-                      ),
-
-                      // Selector de velocidad y volumen
-                      Row(
-                        children: [
-                          IconButton(
-                            icon: Icon(
-                              _videoController!.value.volume > 0
-                                  ? Icons.volume_up_rounded
-                                  : Icons.volume_off_rounded,
-                              size: 18,
-                              color: AppColors.textSecondary,
-                            ),
-                            onPressed: () {
-                              setState(() {
-                                if (_videoController!.value.volume > 0) {
-                                  _videoController!.setVolume(0.0);
-                                } else {
-                                  _videoController!.setVolume(1.0);
-                                }
-                              });
-                            },
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ],
+                ),
               ),
             ),
         ],
@@ -792,7 +824,8 @@ class _InteractiveResourceViewerState extends State<InteractiveResourceViewer>
     );
   }
 
-  /// 3. REPRODUCTOR REAL DE AUDIO (Requisito 4)
+  /// 3. REPRODUCTOR REAL DE AUDIO (Requisito 3)
+  /// Ajustado calculando el espacio disponible sin necesidad de scroll
   Widget _buildAudioPlayer(ResourceItem item) {
     final bool hasController = _audioController != null && _isAudioInitialized;
     final bool isPlaying = hasController && _audioController!.value.isPlaying;
@@ -807,227 +840,265 @@ class _InteractiveResourceViewerState extends State<InteractiveResourceViewer>
           colors: [Color(0xFF1A1625), Color(0xFF0F0B15)],
         ),
       ),
-      child: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Disco / Onda sonora central
-              Stack(
-                alignment: Alignment.center,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final double h = constraints.maxHeight;
+          final double w = constraints.maxWidth;
+
+          // Dimensiones calculadas dinámicamente según el espacio disponible
+          final bool isCompact = h < 270;
+          final double discOuterSize = isCompact ? 56.0 : (h < 380 ? 74.0 : 92.0);
+          final double discInnerSize = isCompact ? 42.0 : (h < 380 ? 56.0 : 70.0);
+          final double iconSize = isCompact ? 22.0 : (h < 380 ? 28.0 : 34.0);
+          final double spacing = isCompact ? 4.0 : (h < 380 ? 7.0 : 11.0);
+          final double waveHeight = isCompact ? 14.0 : (h < 380 ? 18.0 : 24.0);
+          final double sliderWidth = (w - 32).clamp(140.0, 360.0);
+          final double titleFontSize = isCompact ? 12.0 : (h < 380 ? 13.5 : 14.5);
+
+          return Center(
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12, vertical: isCompact ? 4 : 10),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Container(
-                    width: 110,
-                    height: 110,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: RadialGradient(
-                        colors: [
-                          AppColors.accentAmber.withValues(alpha: 0.3),
-                          Colors.transparent,
-                        ],
+                  // Disco central sonoro con tamaño adaptado
+                  Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      Container(
+                        width: discOuterSize,
+                        height: discOuterSize,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: RadialGradient(
+                            colors: [
+                              AppColors.accentAmber.withValues(alpha: 0.3),
+                              Colors.transparent,
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
+                      Container(
+                        width: discInnerSize,
+                        height: discInnerSize,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: AppColors.surfaceElevated,
+                          border: Border.all(
+                            color: AppColors.accentAmber.withValues(alpha: 0.6),
+                            width: 1.8,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.accentAmber.withValues(alpha: 0.25),
+                              blurRadius: 12,
+                            ),
+                          ],
+                        ),
+                        child: Icon(
+                          Icons.graphic_eq_rounded,
+                          size: iconSize,
+                          color: AppColors.accentAmber,
+                        ),
+                      ),
+                    ],
                   ),
-                  Container(
-                    width: 78,
-                    height: 78,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: AppColors.surfaceElevated,
-                      border: Border.all(
-                        color: AppColors.accentAmber.withValues(alpha: 0.6),
-                        width: 2,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.accentAmber.withValues(alpha: 0.25),
-                          blurRadius: 16,
+                  SizedBox(height: spacing),
+
+                  // Nombre del archivo de audio
+                  Text(
+                    item.name,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.sectionTitle.copyWith(fontSize: titleFontSize),
+                  ),
+                  SizedBox(height: isCompact ? 1 : 3),
+                  Text(
+                    'Audio Clase • ${item.formattedSize}',
+                    style: TextStyle(fontSize: isCompact ? 9.5 : 10.5, color: AppColors.textMuted),
+                  ),
+                  SizedBox(height: spacing),
+
+                  // Visualizador animado de barras de audio responsivo
+                  AnimatedBuilder(
+                    animation: _waveformAnimController,
+                    builder: (context, child) {
+                      return Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: List.generate(isCompact ? 12 : 18, (index) {
+                          final double factor = (isPlaying)
+                              ? ((index % 3 + 1) * 0.25 +
+                                      (1.0 - _waveformAnimController.value) * ((index % 5 + 1) * 0.15))
+                                  .clamp(0.2, 1.0)
+                              : 0.2;
+                          return Container(
+                            width: isCompact ? 2.5 : 3.5,
+                            height: waveHeight * factor,
+                            margin: const EdgeInsets.symmetric(horizontal: 1.5),
+                            decoration: BoxDecoration(
+                              color: AppColors.accentAmber.withValues(alpha: 0.4 + factor * 0.6),
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          );
+                        }),
+                      );
+                    },
+                  ),
+                  SizedBox(height: spacing),
+
+                  // Barra de reproducción de audio con ancho calculado
+                  SizedBox(
+                    width: sliderWidth,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SliderTheme(
+                          data: SliderTheme.of(context).copyWith(
+                            trackHeight: 3.0,
+                            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
+                            activeTrackColor: AppColors.accentAmber,
+                            inactiveTrackColor: AppColors.borderSubtle,
+                            thumbColor: AppColors.accentAmber,
+                          ),
+                          child: Slider(
+                            value: audioPos.inSeconds
+                                .toDouble()
+                                .clamp(0.0, audioDur.inSeconds.toDouble() > 0 ? audioDur.inSeconds.toDouble() : 1.0),
+                            min: 0.0,
+                            max: audioDur.inSeconds.toDouble() > 0
+                                ? audioDur.inSeconds.toDouble()
+                                : 1.0,
+                            onChanged: (val) {
+                              _audioController?.seekTo(Duration(seconds: val.toInt()));
+                            },
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                _formatDuration(audioPos),
+                                style: const TextStyle(fontSize: 9.5, color: AppColors.textMuted),
+                              ),
+                              Text(
+                                _formatDuration(audioDur),
+                                style: const TextStyle(fontSize: 9.5, color: AppColors.textMuted),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
-                    child: const Icon(
-                      Icons.graphic_eq_rounded,
-                      size: 38,
-                      color: AppColors.accentAmber,
-                    ),
                   ),
-                ],
-              ),
-              const SizedBox(height: 14),
+                  SizedBox(height: isCompact ? 4 : 8),
 
-              Text(
-                item.name,
-                textAlign: TextAlign.center,
-                style: AppTextStyles.sectionTitle.copyWith(fontSize: 14.5),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Audio Clase • ${item.formattedSize}',
-                style: const TextStyle(fontSize: 10.5, color: AppColors.textMuted),
-              ),
-              const SizedBox(height: 14),
-
-              // Visualizador animado de barras de audio
-              AnimatedBuilder(
-                animation: _waveformAnimController,
-                builder: (context, child) {
-                  return Row(
+                  // Botones de control de audio
+                  Row(
                     mainAxisAlignment: MainAxisAlignment.center,
-                    children: List.generate(18, (index) {
-                      final double factor = (isPlaying)
-                          ? ((index % 3 + 1) * 0.25 +
-                                  (1.0 - _waveformAnimController.value) * ((index % 5 + 1) * 0.15))
-                              .clamp(0.2, 1.0)
-                          : 0.2;
-                      return Container(
-                        width: 3.5,
-                        height: 28 * factor,
-                        margin: const EdgeInsets.symmetric(horizontal: 2),
-                        decoration: BoxDecoration(
-                          color: AppColors.accentAmber.withValues(alpha: 0.4 + factor * 0.6),
-                          borderRadius: BorderRadius.circular(3),
+                    children: [
+                      IconButton(
+                        icon: Icon(Icons.replay_10_rounded, size: isCompact ? 18 : 22),
+                        padding: EdgeInsets.zero,
+                        constraints: BoxConstraints(
+                          minWidth: isCompact ? 28 : 36,
+                          minHeight: isCompact ? 28 : 36,
                         ),
-                      );
-                    }),
-                  );
-                },
-              ),
-              const SizedBox(height: 14),
-
-              // Barra de reproducción de audio
-              SizedBox(
-                width: 320,
-                child: Column(
-                  children: [
-                    SliderTheme(
-                      data: SliderTheme.of(context).copyWith(
-                        trackHeight: 3.5,
-                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                        activeTrackColor: AppColors.accentAmber,
-                        inactiveTrackColor: AppColors.borderSubtle,
-                        thumbColor: AppColors.accentAmber,
-                      ),
-                      child: Slider(
-                        value: audioPos.inSeconds
-                            .toDouble()
-                            .clamp(0.0, audioDur.inSeconds.toDouble() > 0 ? audioDur.inSeconds.toDouble() : 1.0),
-                        min: 0.0,
-                        max: audioDur.inSeconds.toDouble() > 0
-                            ? audioDur.inSeconds.toDouble()
-                            : 1.0,
-                        onChanged: (val) {
-                          _audioController?.seekTo(Duration(seconds: val.toInt()));
+                        onPressed: () {
+                          final newPos = audioPos - const Duration(seconds: 10);
+                          _audioController?.seekTo(newPos > Duration.zero ? newPos : Duration.zero);
                         },
                       ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            _formatDuration(audioPos),
-                            style: const TextStyle(fontSize: 10, color: AppColors.textMuted),
-                          ),
-                          Text(
-                            _formatDuration(audioDur),
-                            style: const TextStyle(fontSize: 10, color: AppColors.textMuted),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 10),
-
-              // Controles principales de audio
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.replay_10_rounded, size: 22),
-                    onPressed: () {
-                      final newPos = audioPos - const Duration(seconds: 10);
-                      _audioController?.seekTo(newPos > Duration.zero ? newPos : Duration.zero);
-                    },
-                  ),
-                  const SizedBox(width: 8),
-                  InkWell(
-                    onTap: () {
-                      if (_audioController == null) {
-                        _initResourceEngines();
-                        return;
-                      }
-                      setState(() {
-                        if (isPlaying) {
-                          _audioController!.pause();
-                        } else {
-                          _audioController!.play();
-                        }
-                      });
-                    },
-                    borderRadius: BorderRadius.circular(30),
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: AppColors.accentAmber,
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.accentAmber.withValues(alpha: 0.4),
-                            blurRadius: 10,
-                          ),
-                        ],
-                      ),
-                      child: Icon(
-                        isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                        size: 26,
-                        color: Colors.black,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    icon: const Icon(Icons.forward_10_rounded, size: 22),
-                    onPressed: () {
-                      final newPos = audioPos + const Duration(seconds: 10);
-                      _audioController?.seekTo(newPos);
-                    },
-                  ),
-                  const SizedBox(width: 8),
-                  IconButton(
-                    icon: Icon(
-                      hasController && _audioController!.value.volume > 0
-                          ? Icons.volume_up_rounded
-                          : Icons.volume_off_rounded,
-                      size: 20,
-                      color: AppColors.accentAmber,
-                    ),
-                    onPressed: () {
-                      if (hasController) {
-                        setState(() {
-                          if (_audioController!.value.volume > 0) {
-                            _audioController!.setVolume(0.0);
-                          } else {
-                            _audioController!.setVolume(1.0);
+                      SizedBox(width: isCompact ? 4 : 8),
+                      InkWell(
+                        onTap: () {
+                          if (_audioController == null) {
+                            _initResourceEngines();
+                            return;
                           }
-                        });
-                      }
-                    },
+                          setState(() {
+                            if (isPlaying) {
+                              _audioController!.pause();
+                            } else {
+                              _audioController!.play();
+                            }
+                          });
+                        },
+                        borderRadius: BorderRadius.circular(30),
+                        child: Container(
+                          padding: EdgeInsets.all(isCompact ? 8 : 11),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: AppColors.accentAmber,
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppColors.accentAmber.withValues(alpha: 0.4),
+                                blurRadius: 8,
+                              ),
+                            ],
+                          ),
+                          child: Icon(
+                            isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                            size: isCompact ? 20 : 24,
+                            color: Colors.black,
+                          ),
+                        ),
+                      ),
+                      SizedBox(width: isCompact ? 4 : 8),
+                      IconButton(
+                        icon: Icon(Icons.forward_10_rounded, size: isCompact ? 18 : 22),
+                        padding: EdgeInsets.zero,
+                        constraints: BoxConstraints(
+                          minWidth: isCompact ? 28 : 36,
+                          minHeight: isCompact ? 28 : 36,
+                        ),
+                        onPressed: () {
+                          final newPos = audioPos + const Duration(seconds: 10);
+                          _audioController?.seekTo(newPos);
+                        },
+                      ),
+                      SizedBox(width: isCompact ? 4 : 8),
+                      IconButton(
+                        icon: Icon(
+                          hasController && _audioController!.value.volume > 0
+                              ? Icons.volume_up_rounded
+                              : Icons.volume_off_rounded,
+                          size: isCompact ? 17 : 20,
+                          color: AppColors.accentAmber,
+                        ),
+                        padding: EdgeInsets.zero,
+                        constraints: BoxConstraints(
+                          minWidth: isCompact ? 28 : 36,
+                          minHeight: isCompact ? 28 : 36,
+                        ),
+                        onPressed: () {
+                          if (hasController) {
+                            setState(() {
+                              if (_audioController!.value.volume > 0) {
+                                _audioController!.setVolume(0.0);
+                              } else {
+                                _audioController!.setVolume(1.0);
+                              }
+                            });
+                          }
+                        },
+                      ),
+                    ],
                   ),
                 ],
               ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }
 
-  /// 4. LECTOR REAL DE ARCHIVOS PDF (Requisito 3 - flutter_pdfview)
+  /// 4. LECTOR REAL DE ARCHIVOS PDF (Requisito 4)
+  /// Flechas discretas a los laterales al centro de la ventana, sin botón grande inferior.
   Widget _buildPdfViewer(ResourceItem item) {
     final file = File(item.path);
     final exists = file.existsSync();
@@ -1042,7 +1113,7 @@ class _InteractiveResourceViewerState extends State<InteractiveResourceViewer>
       color: Colors.black,
       child: Stack(
         children: [
-          // Visor Nativo de PDF
+          // Visor Nativo de PDF ocupando todo el lienzo
           PDFView(
             filePath: file.path,
             enableSwipe: true,
@@ -1073,53 +1144,102 @@ class _InteractiveResourceViewerState extends State<InteractiveResourceViewer>
             },
           ),
 
-          // Barra inferior de control de páginas PDF
-          Positioned(
-            bottom: 8,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: AppColors.surfaceElevated.withValues(alpha: 0.92),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: AppColors.borderHighlight, width: 0.8),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.35),
-                      blurRadius: 8,
+          // Botón lateral izquierdo discreto: Página anterior (solo ícono de flecha al centro)
+          if (_pdfReady && _pdfCurrentPage > 0)
+            Positioned(
+              left: 10,
+              top: 0,
+              bottom: 0,
+              child: Center(
+                child: InkWell(
+                  onTap: () {
+                    _pdfViewController?.setPage(_pdfCurrentPage - 1);
+                  },
+                  borderRadius: BorderRadius.circular(30),
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.45),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.25),
+                        width: 1,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.3),
+                          blurRadius: 6,
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.chevron_left_rounded, size: 20),
-                      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                      padding: EdgeInsets.zero,
-                      onPressed: _pdfReady && _pdfCurrentPage > 0
-                          ? () => _pdfViewController?.setPage(_pdfCurrentPage - 1)
-                          : null,
+                    child: const Icon(
+                      Icons.chevron_left_rounded,
+                      color: Colors.white,
+                      size: 28,
                     ),
-                    Text(
-                      'Pág. ${_pdfCurrentPage + 1} de ${_pdfTotalPages > 0 ? _pdfTotalPages : 1}',
-                      style: const TextStyle(fontSize: 10.5, color: AppColors.textPrimary, fontWeight: FontWeight.bold),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.chevron_right_rounded, size: 20),
-                      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                      padding: EdgeInsets.zero,
-                      onPressed: _pdfReady && _pdfCurrentPage < _pdfTotalPages - 1
-                          ? () => _pdfViewController?.setPage(_pdfCurrentPage + 1)
-                          : null,
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
-          ),
+
+          // Botón lateral derecho discreto: Página siguiente (solo ícono de flecha al centro)
+          if (_pdfReady && _pdfCurrentPage < _pdfTotalPages - 1)
+            Positioned(
+              right: 10,
+              top: 0,
+              bottom: 0,
+              child: Center(
+                child: InkWell(
+                  onTap: () {
+                    _pdfViewController?.setPage(_pdfCurrentPage + 1);
+                  },
+                  borderRadius: BorderRadius.circular(30),
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.45),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.25),
+                        width: 1,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.3),
+                          blurRadius: 6,
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.chevron_right_rounded,
+                      color: Colors.white,
+                      size: 28,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+          // Indicador de página discreto y sutil en la parte inferior central
+          if (_pdfReady && _pdfTotalPages > 0)
+            Positioned(
+              bottom: 8,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.55),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '${_pdfCurrentPage + 1} / $_pdfTotalPages',
+                    style: const TextStyle(fontSize: 10, color: Colors.white70, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );

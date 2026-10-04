@@ -33,6 +33,10 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   TopicFolder? _currentTopic;
   ResourceItem? _selectedResource;
 
+  // Recurso del carrusel derecho cargado en nuevo lienzo encima de la pizarra (Requisito 1)
+  ResourceItem? _whiteboardOverlayResource;
+  final GlobalKey _whiteboardKey = GlobalKey();
+
   // Estado de distribución de pantalla y proporción del recurso activo
   ScreenDistributionMode _layoutMode = ScreenDistributionMode.standard801010;
   double _resourceSplitRatio = 0.50; // 0.50 (50%), 0.75 (75%), 1.00 (100%)
@@ -158,6 +162,46 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     });
   }
 
+  /// Selección de recursos del carrusel derecho (Imágenes, Videos, Audios, etc.) (Requisito 1):
+  /// Se cargan en un nuevo lienzo encima de donde se encuentre la pizarra reemplazándola por completo,
+  /// ocupando el mismo espacio y proporción asignada a la pizarra, sin borrar lo que esté dibujado en ella.
+  void _onRightResourceSelected(ResourceItem item) {
+    setState(() {
+      _whiteboardOverlayResource = item;
+      _showWelcomeCard = false;
+    });
+  }
+
+  /// Construye el lienzo de la pizarra con soporte de superposición total de recursos del carrusel derecho.
+  /// Mantiene la pizarra siempre montada debajo para no borrar ningún trazo.
+  Widget _buildWhiteboardArea({bool isStandalone = false}) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // 1. Pizarra de dibujo activa e inalterada
+        WhiteboardCanvas(
+          key: _whiteboardKey,
+          isStandalone: isStandalone,
+        ),
+
+        // 2. Nuevo lienzo superpuesto con el recurso del carrusel derecho (lo cubre por completo)
+        if (_whiteboardOverlayResource != null)
+          Positioned.fill(
+            child: InteractiveResourceViewer(
+              resource: _whiteboardOverlayResource!,
+              currentRatio: 1.0,
+              showLayoutControls: false,
+              onClose: () {
+                setState(() {
+                  _whiteboardOverlayResource = null;
+                });
+              },
+            ),
+          ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -276,7 +320,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                     });
                   },
                 )
-              : const WhiteboardCanvas(isStandalone: true),
+              : _buildWhiteboardArea(isStandalone: true),
         );
 
       case ScreenDistributionMode.split5050:
@@ -314,11 +358,12 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
               ),
 
               // 3. Carrusel lateral derecho (Imágenes, Videos y Audios)
+              // Al tocar un recurso, se carga sobre la pizarra en un nuevo lienzo (Requisito 1)
               Expanded(
                 flex: 10,
                 child: RightMediaCarousel(
                   resources: rightResources,
-                  onResourceTap: _onResourceSelected,
+                  onResourceTap: _onRightResourceSelected,
                   onOpenTopicSelector: () => _openFolderPickerDialog(),
                 ),
               ),
@@ -332,9 +377,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   /// o divide la pantalla entre el recurso activo (interactivo y real) y la pizarra según el porcentaje elegido.
   Widget _buildCenterWorkspace() {
     if (_selectedResource == null) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(horizontal: 2.0),
-        child: WhiteboardCanvas(),
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2.0),
+        child: _buildWhiteboardArea(),
       );
     }
 
@@ -374,9 +419,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       child: viewer,
     );
 
-    final whiteboardWidget = const Expanded(
+    final whiteboardWidget = Expanded(
       flex: 100,
-      child: WhiteboardCanvas(),
+      child: _buildWhiteboardArea(),
     );
 
     return Padding(
@@ -398,7 +443,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         children: [
           Expanded(
             flex: whiteboardFlex,
-            child: const WhiteboardCanvas(),
+            child: _buildWhiteboardArea(),
           ),
           const SizedBox(width: 3),
           Expanded(
@@ -434,7 +479,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     );
 
     final resourceWidget = Expanded(flex: resourceFlex, child: viewer);
-    final whiteboardWidget = const Expanded(flex: 100, child: WhiteboardCanvas());
+    final whiteboardWidget = Expanded(flex: 100, child: _buildWhiteboardArea());
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
