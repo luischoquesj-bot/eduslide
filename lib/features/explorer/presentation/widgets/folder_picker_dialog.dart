@@ -88,10 +88,10 @@ class _FolderPickerDialogState extends State<FolderPickerDialog> {
     setState(() => _isLoading = true);
 
     final dirs = await widget.storageService.listSubdirectories(path);
-    // Cargamos los recursos de la carpeta actual
+    // Cargamos los recursos de la carpeta actual y subcarpetas para visualización completa
     final resources = await widget.storageService.loadResourcesFromDirectory(
       path,
-      includeSubdirectories: false,
+      includeSubdirectories: true,
     );
 
     if (mounted) {

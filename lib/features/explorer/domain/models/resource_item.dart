@@ -28,9 +28,53 @@ class ResourceItem {
     required this.type,
   });
 
+  /// Retorna si la extensión de archivo corresponde a un recurso educativo soportado
+  static bool isSupportedExtension(String ext) {
+    final clean = ext.toLowerCase().replaceAll('.', '').trim();
+    return const {
+      'pdf',
+      'eslide',
+      'json',
+      'ppt',
+      'pptx',
+      'odp',
+      'doc',
+      'docx',
+      'txt',
+      'epub',
+      'jpg',
+      'jpeg',
+      'png',
+      'webp',
+      'gif',
+      'bmp',
+      'svg',
+      'heic',
+      'heif',
+      'mp4',
+      'mkv',
+      'avi',
+      'mov',
+      '3gp',
+      'wmv',
+      'webm',
+      'flv',
+      'm4v',
+      'mp3',
+      'wav',
+      'm4a',
+      'ogg',
+      'flac',
+      'aac',
+      'wma',
+      'opus',
+      'amr',
+    }.contains(clean);
+  }
+
   /// Determina el tipo de recurso a partir de su extensión de archivo
   static ResourceType typeFromExtension(String ext) {
-    final cleanExt = ext.toLowerCase().replaceAll('.', '');
+    final cleanExt = ext.toLowerCase().replaceAll('.', '').trim();
     switch (cleanExt) {
       case 'pdf':
         return ResourceType.pdf;
@@ -38,22 +82,41 @@ class ResourceItem {
       case 'json':
       case 'ppt':
       case 'pptx':
+      case 'odp':
+      case 'doc':
+      case 'docx':
+      case 'txt':
+      case 'epub':
         return ResourceType.slide;
       case 'jpg':
       case 'jpeg':
       case 'png':
       case 'webp':
       case 'gif':
+      case 'bmp':
+      case 'svg':
+      case 'heic':
+      case 'heif':
         return ResourceType.image;
       case 'mp4':
       case 'mkv':
       case 'avi':
       case 'mov':
+      case '3gp':
+      case 'wmv':
+      case 'webm':
+      case 'flv':
+      case 'm4v':
         return ResourceType.video;
       case 'mp3':
       case 'wav':
       case 'm4a':
       case 'ogg':
+      case 'flac':
+      case 'aac':
+      case 'wma':
+      case 'opus':
+      case 'amr':
         return ResourceType.audio;
       default:
         return ResourceType.slide;

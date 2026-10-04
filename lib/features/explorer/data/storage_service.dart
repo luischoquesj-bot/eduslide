@@ -40,18 +40,24 @@ class StorageService {
     }
 
     try {
-      // 1. En Android 11+ (API 30+) se solicita MANAGE_EXTERNAL_STORAGE
-      if (await Permission.manageExternalStorage.isGranted) {
-        return true;
+      // 1. En Android 11+ (API 30+) se solicita MANAGE_EXTERNAL_STORAGE para acceso a archivos
+      var manageStatus = await Permission.manageExternalStorage.status;
+      if (!manageStatus.isGranted) {
+        manageStatus = await Permission.manageExternalStorage.request();
       }
-      final manageStatus = await Permission.manageExternalStorage.request();
       if (manageStatus.isGranted) {
         return true;
       }
 
-      // 2. Fallback para Android 10 y versiones anteriores
-      final storageStatus = await Permission.storage.request();
-      return storageStatus.isGranted;
+      // 2. Solicitud de permisos multimedia y almacenamiento estándar (Android 10 y Android 13+)
+      final statuses = await [
+        Permission.storage,
+        Permission.photos,
+        Permission.videos,
+        Permission.audio,
+      ].request();
+
+      return statuses.values.any((s) => s.isGranted);
     } catch (e) {
       debugPrint('[StorageService] Error al solicitar permisos: $e');
       return false;
@@ -189,78 +195,66 @@ class StorageService {
     String directoryPath, {
     bool includeSubdirectories = true,
   }) async {
-    try {
-      final dir = Directory(directoryPath);
-      if (!await dir.exists()) {
-        return [];
-      }
-
-      final List<ResourceItem> items = [];
-      final List<FileSystemEntity> entities;
-
-      if (includeSubdirectories) {
-        entities = dir.listSync(recursive: true, followLinks: false);
-      } else {
-        entities = dir.listSync(recursive: false, followLinks: false);
-      }
-
-      // Extensiones educativas soportadas
-      const validExtensions = {
-        '.pdf',
-        '.eslide',
-        '.json',
-        '.ppt',
-        '.pptx',
-        '.jpg',
-        '.jpeg',
-        '.png',
-        '.webp',
-        '.gif',
-        '.mp4',
-        '.mkv',
-        '.avi',
-        '.mov',
-        '.mp3',
-        '.wav',
-        '.m4a',
-        '.ogg',
-      };
-
-      for (final entity in entities) {
-        if (entity is File) {
-          final fileName = p.basename(entity.path);
-          // Ignorar archivos ocultos o temporales
-          if (fileName.startsWith('.')) continue;
-
-          final ext = p.extension(entity.path).toLowerCase();
-          if (validExtensions.contains(ext)) {
-            final type = ResourceItem.typeFromExtension(ext);
-            int sizeBytes = 0;
-            try {
-              sizeBytes = entity.statSync().size;
-            } catch (_) {}
-
-            items.add(
-              ResourceItem(
-                id: entity.path,
-                path: entity.path,
-                name: p.basenameWithoutExtension(fileName),
-                extension: ext,
-                sizeBytes: sizeBytes,
-                type: type,
-              ),
-            );
-          }
-        }
-      }
-
-      // Ordenar alfabéticamente por nombre
-      items.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-      return items;
-    } catch (e) {
-      debugPrint('[StorageService] Error cargando recursos de $directoryPath: $e');
+    final dir = Directory(directoryPath);
+    if (!await dir.exists()) {
       return [];
     }
+
+    final List<ResourceItem> items = [];
+    final List<Directory> queue = [dir];
+    final Set<String> visited = {};
+
+    while (queue.isNotEmpty) {
+      final currentDir = queue.removeAt(0);
+      if (!visited.add(currentDir.path)) continue;
+
+      try {
+        final entries = currentDir.listSync(followLinks: false);
+        for (final entity in entries) {
+          try {
+            if (entity is File) {
+              final fileName = p.basename(entity.path);
+              if (fileName.startsWith('.')) continue;
+
+              final ext = p.extension(entity.path).toLowerCase();
+              if (ResourceItem.isSupportedExtension(ext)) {
+                int sizeBytes = 0;
+                try {
+                  sizeBytes = entity.statSync().size;
+                } catch (_) {}
+
+                items.add(
+                  ResourceItem(
+                    id: entity.path,
+                    path: entity.path,
+                    name: p.basenameWithoutExtension(fileName),
+                    extension: ext,
+                    sizeBytes: sizeBytes,
+                    type: ResourceItem.typeFromExtension(ext),
+                  ),
+                );
+              }
+            } else if (includeSubdirectories && entity is Directory) {
+              final dirName = p.basename(entity.path);
+              if (!dirName.startsWith('.') &&
+                  !dirName.startsWith('\$') &&
+                  dirName.toLowerCase() != 'lost.dir' &&
+                  dirName.toLowerCase() != 'android') {
+                queue.add(entity);
+              }
+            }
+          } catch (fileErr) {
+            debugPrint('[StorageService] Error procesando archivo individual: $fileErr');
+          }
+        }
+      } catch (dirErr) {
+        debugPrint('[StorageService] No se pudo leer directorio ${currentDir.path}: $dirErr');
+      }
+    }
+
+    // Ordenar alfabéticamente por nombre
+    items.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    return items;
   }
 
   /// Crea un TopicFolder a partir de cualquier carpeta elegida por el profesor

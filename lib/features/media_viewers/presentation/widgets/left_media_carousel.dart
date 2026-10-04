@@ -66,9 +66,7 @@ class _LeftMediaCarouselState extends State<LeftMediaCarousel> {
   String? _selectedId;
 
   List<ResourceItem> get _items =>
-      (widget.resources != null && widget.resources!.isNotEmpty)
-          ? widget.resources!
-          : _fallbackResources;
+      widget.resources ?? _fallbackResources;
 
   @override
   Widget build(BuildContext context) {
@@ -96,17 +94,43 @@ class _LeftMediaCarouselState extends State<LeftMediaCarousel> {
 
           // Lista vertical deslizable de previsualizaciones pegada a los bordes
           Expanded(
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2.5),
-              physics: const BouncingScrollPhysics(),
-              itemCount: _items.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 5),
-              itemBuilder: (context, index) {
-                final item = _items[index];
-                final isSelected = _selectedId == item.id;
-                return _buildMediaTile(item, isSelected);
-              },
-            ),
+            child: _items.isEmpty
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.picture_as_pdf_outlined,
+                            size: 20,
+                            color: AppColors.textMuted.withValues(alpha: 0.6),
+                          ),
+                          const SizedBox(height: 4),
+                          const Text(
+                            'Sin PDFs\nni Slides',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 8.5,
+                              color: AppColors.textMuted,
+                              height: 1.2,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : ListView.separated(
+                    padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2.5),
+                    physics: const BouncingScrollPhysics(),
+                    itemCount: _items.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 5),
+                    itemBuilder: (context, index) {
+                      final item = _items[index];
+                      final isSelected = _selectedId == item.id;
+                      return _buildMediaTile(item, isSelected);
+                    },
+                  ),
           ),
 
           // Botón inferior compacto para abrir el explorador de temas y USB
