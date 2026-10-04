@@ -158,6 +158,127 @@ class StorageService {
     return units;
   }
 
+  /// Lista las subcarpetas dentro de una ruta de directorio dada
+  Future<List<Directory>> listSubdirectories(String directoryPath) async {
+    try {
+      final dir = Directory(directoryPath);
+      if (!await dir.exists()) {
+        return [];
+      }
+
+      final entries = dir.listSync(followLinks: false);
+      final directories = entries.whereType<Directory>().where((d) {
+        final name = p.basename(d.path);
+        // Excluir carpetas ocultas y temporales
+        return !name.startsWith('.') &&
+            !name.startsWith('\$') &&
+            name.toLowerCase() != 'lost.dir';
+      }).toList();
+
+      directories.sort((a, b) =>
+          p.basename(a.path).toLowerCase().compareTo(p.basename(b.path).toLowerCase()));
+      return directories;
+    } catch (e) {
+      debugPrint('[StorageService] Error al listar subcarpetas de $directoryPath: $e');
+      return [];
+    }
+  }
+
+  /// Carga y clasifica todos los archivos educativos soportados dentro de una carpeta dada
+  Future<List<ResourceItem>> loadResourcesFromDirectory(
+    String directoryPath, {
+    bool includeSubdirectories = true,
+  }) async {
+    try {
+      final dir = Directory(directoryPath);
+      if (!await dir.exists()) {
+        return [];
+      }
+
+      final List<ResourceItem> items = [];
+      final List<FileSystemEntity> entities;
+
+      if (includeSubdirectories) {
+        entities = dir.listSync(recursive: true, followLinks: false);
+      } else {
+        entities = dir.listSync(recursive: false, followLinks: false);
+      }
+
+      // Extensiones educativas soportadas
+      const validExtensions = {
+        '.pdf',
+        '.eslide',
+        '.json',
+        '.ppt',
+        '.pptx',
+        '.jpg',
+        '.jpeg',
+        '.png',
+        '.webp',
+        '.gif',
+        '.mp4',
+        '.mkv',
+        '.avi',
+        '.mov',
+        '.mp3',
+        '.wav',
+        '.m4a',
+        '.ogg',
+      };
+
+      for (final entity in entities) {
+        if (entity is File) {
+          final fileName = p.basename(entity.path);
+          // Ignorar archivos ocultos o temporales
+          if (fileName.startsWith('.')) continue;
+
+          final ext = p.extension(entity.path).toLowerCase();
+          if (validExtensions.contains(ext)) {
+            final type = ResourceItem.typeFromExtension(ext);
+            int sizeBytes = 0;
+            try {
+              sizeBytes = entity.statSync().size;
+            } catch (_) {}
+
+            items.add(
+              ResourceItem(
+                id: entity.path,
+                path: entity.path,
+                name: p.basenameWithoutExtension(fileName),
+                extension: ext,
+                sizeBytes: sizeBytes,
+                type: type,
+              ),
+            );
+          }
+        }
+      }
+
+      // Ordenar alfabéticamente por nombre
+      items.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      return items;
+    } catch (e) {
+      debugPrint('[StorageService] Error cargando recursos de $directoryPath: $e');
+      return [];
+    }
+  }
+
+  /// Crea un TopicFolder a partir de cualquier carpeta elegida por el profesor
+  Future<TopicFolder> createTopicFromDirectory(
+    String directoryPath, {
+    String? customName,
+  }) async {
+    final resources = await loadResourcesFromDirectory(directoryPath);
+    final folderName = customName ?? p.basename(directoryPath);
+
+    return TopicFolder(
+      id: directoryPath,
+      name: folderName.isEmpty ? 'Carpeta Seleccionada' : folderName,
+      path: directoryPath,
+      resources: resources,
+    );
+  }
+
   /// Escanea la estructura curricular limitándose estrictamente a 2 niveles:
   /// Nivel 1: Año Escolar (1ero Sec. - 6to Sec.)
   /// Nivel 2: Tema Curricular (ej. "Los minimedios")

@@ -5,6 +5,8 @@ import '../../../explorer/data/storage_service.dart';
 import '../../../explorer/domain/models/grade_folder.dart';
 import '../../../explorer/domain/models/resource_item.dart';
 import '../../../explorer/domain/models/topic_folder.dart';
+import '../../../explorer/presentation/widgets/folder_picker_dialog.dart';
+import '../../../explorer/presentation/widgets/storage_source_dialog.dart';
 import '../../../explorer/presentation/widgets/topic_selector_dialog.dart';
 import '../../../media_viewers/presentation/widgets/left_media_carousel.dart';
 import '../../../media_viewers/presentation/widgets/right_media_carousel.dart';
@@ -79,23 +81,76 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         _hasUsbDetected = hasUsb;
       });
 
-      // Si se detectó una unidad USB al arrancar, avisamos discretamente al profesor
+      // Si se detectó una unidad USB al arrancar, consultar activamente al profesor
       if (hasUsb) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _askStorageSource(units);
+          }
+        });
+      }
+    }
+  }
+
+  /// Consulta al docente si desea leer desde la Memoria USB detectada o desde la Memoria Interna
+  void _askStorageSource([List<StorageUnit>? availableUnits]) async {
+    final units = availableUnits ?? await _storageService.detectStorageUnits();
+    if (!mounted) return;
+
+    StorageSourceDialog.show(
+      context,
+      units: units,
+      onSelectUnit: (selectedUnit) {
+        setState(() {
+          _currentStorageUnit = selectedUnit;
+        });
+        // Abrir inmediatamente el explorador de carpetas en la unidad elegida
+        _openFolderPickerDialog(initialUnit: selectedUnit);
+      },
+    );
+  }
+
+  /// Abre el explorador táctil de carpetas para seleccionar cualquier directorio del USB o almacenamiento interno
+  void _openFolderPickerDialog({StorageUnit? initialUnit}) {
+    FolderPickerDialog.show(
+      context,
+      storageService: _storageService,
+      initialUnit: initialUnit ?? _currentStorageUnit,
+      initialPath: _currentTopic?.path,
+      onFolderSelected: (unit, folder) {
+        setState(() {
+          _currentStorageUnit = unit;
+          _currentTopic = folder;
+          _showWelcomeCard = false; // Quitar tarjeta para visualizar la clase de inmediato
+        });
+
+        final leftCount = folder.leftPanelResources.length;
+        final rightCount = folder.rightPanelResources.length;
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              'Memoria USB detectada: ${defaultUnit.label}. Recursos listos.',
+            content: Row(
+              children: [
+                Icon(
+                  unit.type == StorageType.usb ? Icons.usb_rounded : Icons.folder_rounded,
+                  color: AppColors.primary,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Carpeta cargada: "${folder.name}" ($leftCount Slides/PDFs • $rightCount Medios)',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
             ),
             duration: const Duration(seconds: 3),
             behavior: SnackBarBehavior.floating,
-            action: SnackBarAction(
-              label: 'Explorar',
-              onPressed: _openTopicSelectorDialog,
-            ),
           ),
         );
-      }
-    }
+      },
+    );
   }
 
   void _openTopicSelectorDialog() {
@@ -181,9 +236,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                     onExploreMaterials: () {
                       setState(() {
                         _showWelcomeCard = false;
-                        _layoutMode = ScreenDistributionMode.split5050;
                       });
-                      _openTopicSelectorDialog();
+                      _askStorageSource();
                     },
                   ),
                 ),
@@ -199,7 +253,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
               ),
             ),
 
-            // 4. Barra flotante superior de estado curricular (Discreta, pegada arriba al centro)
+            // 4. Barra flotante superior de estado curricular y carpeta activa
             Positioned(
               top: 6,
               left: 0,
@@ -247,16 +301,16 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     );
   }
 
-  /// Píldora interactiva superior que muestra el tema curricular activo y acceso al selector
+  /// Píldora interactiva superior que muestra la unidad y carpeta activa con acceso rápido al explorador
   Widget _buildCurricularStatusPill() {
-    final gradeText = _currentGrade?.name ?? '1ero Sec.';
-    final topicText = _currentTopic?.name ?? 'Lengua Castellana';
+    final unitText = _currentStorageUnit?.label ?? 'Almacenamiento';
+    final folderText = _currentTopic?.name ?? 'Recursos de Clase';
     final isUsb = (_currentStorageUnit?.type == StorageType.usb) || _hasUsbDetected;
 
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: _openTopicSelectorDialog,
+        onTap: () => _openFolderPickerDialog(),
         borderRadius: BorderRadius.circular(20),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -265,7 +319,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
             borderRadius: BorderRadius.circular(20),
             border: Border.all(
               color: isUsb
-                  ? AppColors.accentGreen.withValues(alpha: 0.6)
+                  ? AppColors.accentGreen.withValues(alpha: 0.7)
                   : AppColors.borderHighlight,
               width: 1.0,
             ),
@@ -281,13 +335,13 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                isUsb ? Icons.usb_rounded : Icons.school_rounded,
+                isUsb ? Icons.usb_rounded : Icons.folder_rounded,
                 size: 13,
                 color: isUsb ? AppColors.accentGreen : AppColors.primary,
               ),
               const SizedBox(width: 6),
               Text(
-                '$gradeText • $topicText',
+                '$unitText • $folderText',
                 style: const TextStyle(
                   color: AppColors.textPrimary,
                   fontSize: 10.5,
@@ -352,7 +406,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                 child: LeftMediaCarousel(
                   resources: leftResources,
                   onResourceTap: _onResourceSelected,
-                  onOpenTopicSelector: _openTopicSelectorDialog,
+                  onOpenTopicSelector: () => _openFolderPickerDialog(),
                 ),
               ),
             ],
@@ -371,7 +425,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                 child: LeftMediaCarousel(
                   resources: leftResources,
                   onResourceTap: _onResourceSelected,
-                  onOpenTopicSelector: _openTopicSelectorDialog,
+                  onOpenTopicSelector: () => _openFolderPickerDialog(),
                 ),
               ),
 
@@ -390,7 +444,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                 child: RightMediaCarousel(
                   resources: rightResources,
                   onResourceTap: _onResourceSelected,
-                  onOpenTopicSelector: _openTopicSelectorDialog,
+                  onOpenTopicSelector: () => _openFolderPickerDialog(),
                 ),
               ),
             ],

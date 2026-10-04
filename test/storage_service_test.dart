@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:eduslide/features/explorer/data/storage_service.dart';
 import 'package:eduslide/features/explorer/domain/models/grade_folder.dart';
@@ -170,6 +171,43 @@ void main() {
       expect(firstTopic.resources, isNotEmpty);
       expect(firstTopic.leftPanelResources, isNotEmpty);
       expect(firstTopic.rightPanelResources, isNotEmpty);
+    });
+
+    test('listSubdirectories y loadResourcesFromDirectory exploran y clasifican archivos reales de una carpeta', () async {
+      // Crear carpeta de prueba temporal
+      final tempDir = Directory.systemTemp.createTempSync('eduslide_test_folder_');
+      addTearDown(() {
+        if (tempDir.existsSync()) {
+          tempDir.deleteSync(recursive: true);
+        }
+      });
+
+      // Crear subcarpetas
+      final subDirA = Directory('${tempDir.path}/Unidad 1')..createSync();
+      final subDirB = Directory('${tempDir.path}/Unidad 2')..createSync();
+
+      // Crear archivos educativos simulados
+      File('${subDirA.path}/guia_didactica.pdf').writeAsStringSync('dummy pdf content');
+      File('${subDirA.path}/presentacion.eslide').writeAsStringSync('dummy slide content');
+      File('${subDirB.path}/mapa.png').writeAsStringSync('dummy image content');
+      File('${subDirB.path}/explicacion.mp4').writeAsStringSync('dummy video content');
+
+      // 1. Probar listSubdirectories
+      final subdirs = await storageService.listSubdirectories(tempDir.path);
+      expect(subdirs.length, 2);
+
+      // 2. Probar loadResourcesFromDirectory recursivo
+      final allResources = await storageService.loadResourcesFromDirectory(
+        tempDir.path,
+        includeSubdirectories: true,
+      );
+      expect(allResources.length, 4);
+
+      // 3. Probar createTopicFromDirectory
+      final topic = await storageService.createTopicFromDirectory(tempDir.path, customName: 'Mi Carpeta de Aula');
+      expect(topic.name, 'Mi Carpeta de Aula');
+      expect(topic.leftPanelResources.length, 2); // pdf y eslide
+      expect(topic.rightPanelResources.length, 2); // png y mp4
     });
   });
 }
