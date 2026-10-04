@@ -7,11 +7,15 @@ environment:
   sdk: ^3.12.2
 
 dependencies:
+  archive: ^4.3.0
+  audioplayers: ^6.8.1
   flutter:
     sdk: flutter
+  flutter_pdfview: ^1.4.5
   path: ^1.9.1
   path_provider: ^2.1.6
   permission_handler: 11.3.1
+  video_player: ^2.14.1
 
 dev_dependencies:
   flutter_test:

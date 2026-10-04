@@ -287,11 +287,10 @@ class _ControlBottomSheetState extends State<ControlBottomSheet> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final isCompact = constraints.maxWidth < 620;
+        final use2x2 = constraints.maxWidth < 560;
 
         Widget buildItem(_LayoutOption opt) {
           final isSelected = _selectedLayout == opt.mode;
-          final itemWidth = isCompact ? (constraints.maxWidth * 0.42).clamp(120.0, 160.0) : null;
 
           return InkWell(
             onTap: () {
@@ -302,19 +301,19 @@ class _ControlBottomSheetState extends State<ControlBottomSheet> {
               // Cierra automáticamente la ventana de Configuración al seleccionar la opción
               Navigator.of(context).pop();
             },
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(12),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 180),
-              width: itemWidth,
+              width: double.infinity,
               padding: EdgeInsets.symmetric(
-                vertical: (screenHeight * 0.016).clamp(8.0, 14.0),
-                horizontal: 8,
+                vertical: (screenHeight * 0.015).clamp(8.0, 12.0),
+                horizontal: 4,
               ),
               decoration: BoxDecoration(
                 color: isSelected
-                    ? AppColors.primary.withValues(alpha: 0.15)
+                    ? AppColors.primary.withValues(alpha: 0.18)
                     : AppColors.surfaceLight.withValues(alpha: 0.35),
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(12),
                 border: Border.all(
                   color: isSelected
                       ? AppColors.primary
@@ -323,23 +322,24 @@ class _ControlBottomSheetState extends State<ControlBottomSheet> {
                 ),
               ),
               child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
                     opt.icon,
                     color: isSelected
                         ? AppColors.primary
                         : AppColors.textSecondary,
-                    size: (screenHeight * 0.045).clamp(20.0, 26.0),
+                    size: (screenHeight * 0.04).clamp(18.0, 24.0),
                   ),
-                  const SizedBox(height: 5),
+                  const SizedBox(height: 4),
                   Text(
                     opt.title,
                     textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: (screenHeight * 0.024).clamp(10.5, 12.0),
-                      fontWeight: isSelected
-                          ? FontWeight.bold
-                          : FontWeight.w600,
+                      fontSize: (screenHeight * 0.022).clamp(10.0, 11.5),
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
                       color: isSelected
                           ? AppColors.textPrimary
                           : AppColors.textSecondary,
@@ -352,7 +352,7 @@ class _ControlBottomSheetState extends State<ControlBottomSheet> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: (screenHeight * 0.02).clamp(8.5, 10.0),
+                      fontSize: (screenHeight * 0.018).clamp(8.0, 9.5),
                       color: isSelected
                           ? AppColors.primary
                           : AppColors.textMuted,
@@ -364,30 +364,36 @@ class _ControlBottomSheetState extends State<ControlBottomSheet> {
           );
         }
 
-        if (isCompact) {
-          return SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            physics: const BouncingScrollPhysics(),
-            child: Row(
-              children: options
-                  .map((opt) => Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: buildItem(opt),
-                      ))
-                  .toList(),
-            ),
+        if (use2x2) {
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Expanded(child: buildItem(options[0])),
+                  const SizedBox(width: 8),
+                  Expanded(child: buildItem(options[1])),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(child: buildItem(options[2])),
+                  const SizedBox(width: 8),
+                  Expanded(child: buildItem(options[3])),
+                ],
+              ),
+            ],
           );
         }
 
         return Row(
-          children: options.map((opt) {
-            return Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: buildItem(opt),
-              ),
-            );
-          }).toList(),
+          children: [
+            for (int i = 0; i < options.length; i++) ...[
+              if (i > 0) const SizedBox(width: 8),
+              Expanded(child: buildItem(options[i])),
+            ],
+          ],
         );
       },
     );

@@ -339,54 +339,45 @@ class _WhiteboardCanvasState extends State<WhiteboardCanvas> {
     );
   }
 
-  /// [Requisito 1]: Botón único que conmuta de estado entre Pizarra Blanca y Pizarra Oscura
+  /// [Requisito 5]: Botón único que muestra solo el ícono:
+  /// - Si está en pizarra blanca muestra el ícono de noche/oscuro (Icons.dark_mode_rounded)
+  /// - Si está en pizarra oscura muestra el ícono del sol (Icons.light_mode_rounded)
   Widget _buildSingleModeToggleButton(bool isChalk) {
     final activeBg = isChalk ? const Color(0xFF234235) : Colors.white;
-    final activeTextColor = isChalk ? Colors.white : const Color(0xFF0F172A);
-    final icon = isChalk ? Icons.dark_mode_rounded : Icons.light_mode_rounded;
-    final title = isChalk ? 'Pizarra Oscura' : 'Pizarra Blanca';
+    final icon = isChalk ? Icons.light_mode_rounded : Icons.dark_mode_rounded;
+    final iconColor = isChalk ? Colors.amberAccent : const Color(0xFF1E293B);
+    final tooltipText = isChalk
+        ? 'Cambiar a Pizarra Blanca (Día)'
+        : 'Cambiar a Pizarra Escolar Oscura (Noche)';
 
-    return InkWell(
-      onTap: _toggleWhiteboardMode,
-      borderRadius: BorderRadius.circular(20),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-        decoration: BoxDecoration(
-          color: activeBg,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isChalk ? const Color(0xFF38BDF8) : const Color(0xFF94A3B8),
-            width: 1.2,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.18),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
+    return Tooltip(
+      message: tooltipText,
+      child: InkWell(
+        onTap: _toggleWhiteboardMode,
+        borderRadius: BorderRadius.circular(20),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.all(7),
+          decoration: BoxDecoration(
+            color: activeBg,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: isChalk ? Colors.amberAccent.withValues(alpha: 0.6) : const Color(0xFF94A3B8),
+              width: 1.2,
             ),
-          ],
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 15, color: activeTextColor),
-            const SizedBox(width: 6),
-            Text(
-              title,
-              style: TextStyle(
-                fontSize: 11.5,
-                fontWeight: FontWeight.w700,
-                color: activeTextColor,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.18),
+                blurRadius: 6,
+                offset: const Offset(0, 2),
               ),
-            ),
-            const SizedBox(width: 6),
-            Icon(
-              Icons.sync_rounded,
-              size: 13,
-              color: activeTextColor.withValues(alpha: 0.7),
-            ),
-          ],
+            ],
+          ),
+          child: Icon(
+            icon,
+            size: 17,
+            color: iconColor,
+          ),
         ),
       ),
     );

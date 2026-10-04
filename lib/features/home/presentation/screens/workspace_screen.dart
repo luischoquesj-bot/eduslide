@@ -7,7 +7,6 @@ import '../../../explorer/domain/models/resource_item.dart';
 import '../../../explorer/domain/models/topic_folder.dart';
 import '../../../explorer/presentation/widgets/folder_picker_dialog.dart';
 import '../../../explorer/presentation/widgets/storage_source_dialog.dart';
-import '../../../explorer/presentation/widgets/topic_selector_dialog.dart';
 import '../../../media_viewers/presentation/widgets/interactive_resource_viewer.dart';
 import '../../../media_viewers/presentation/widgets/left_media_carousel.dart';
 import '../../../media_viewers/presentation/widgets/right_media_carousel.dart';
@@ -31,10 +30,8 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 
   // Estado del explorador curricular
   StorageUnit? _currentStorageUnit;
-  GradeFolder? _currentGrade;
   TopicFolder? _currentTopic;
   ResourceItem? _selectedResource;
-  bool _hasUsbDetected = false;
 
   // Estado de distribución de pantalla y proporción del recurso activo
   ScreenDistributionMode _layoutMode = ScreenDistributionMode.standard801010;
@@ -46,9 +43,6 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 
   // Control de visualización de la tarjeta de bienvenida
   bool _showWelcomeCard = true;
-
-  // Título del recurso activo
-  String? _activeMediaTitle;
 
   @override
   void initState() {
@@ -79,9 +73,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     if (mounted) {
       setState(() {
         _currentStorageUnit = defaultUnit;
-        _currentGrade = defaultGrade;
         _currentTopic = defaultTopic;
-        _hasUsbDetected = hasUsb;
       });
 
       // Si se detectó una unidad USB al arrancar, consultar activamente al profesor
@@ -156,37 +148,9 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     );
   }
 
-  void _openTopicSelectorDialog() {
-    TopicSelectorDialog.show(
-      context,
-      storageService: _storageService,
-      currentUnit: _currentStorageUnit,
-      selectedGrade: _currentGrade,
-      selectedTopic: _currentTopic,
-      onTopicSelected: (unit, grade, topic) {
-        setState(() {
-          _currentStorageUnit = unit;
-          _currentGrade = grade;
-          _currentTopic = topic;
-        });
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Tema activo: ${topic.name} (${grade.name})',
-            ),
-            duration: const Duration(seconds: 2),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      },
-    );
-  }
-
   void _onResourceSelected(ResourceItem item) {
     setState(() {
       _selectedResource = item;
-      _activeMediaTitle = item.name;
       // Si la pizarra estaba ocupando el 100% libre, cambia a estándar para mostrar el recurso junto al espacio
       if (_layoutMode == ScreenDistributionMode.full100) {
         _layoutMode = ScreenDistributionMode.standard801010;
@@ -241,17 +205,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
               ),
             ),
 
-            // 4. Barra flotante superior de estado curricular y carpeta activa
-            Positioned(
-              top: 6,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: _buildCurricularStatusPill(),
-              ),
-            ),
-
-            // 5. Atajo flotante discreto en esquina superior derecha para reabrir bienvenida
+            // 4. Atajo flotante discreto en esquina superior derecha para reabrir bienvenida
             if (!_showWelcomeCard)
               Positioned(
                 top: 6,
@@ -284,66 +238,6 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                 ),
               ),
           ],
-        ),
-      ),
-    );
-  }
-
-  /// Píldora interactiva superior que muestra la unidad y carpeta activa con acceso rápido al explorador
-  Widget _buildCurricularStatusPill() {
-    final unitText = _currentStorageUnit?.label ?? 'Almacenamiento';
-    final folderText = _currentTopic?.name ?? 'Recursos de Clase';
-    final isUsb = (_currentStorageUnit?.type == StorageType.usb) || _hasUsbDetected;
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () => _openFolderPickerDialog(),
-        borderRadius: BorderRadius.circular(20),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          decoration: BoxDecoration(
-            color: AppColors.surfaceElevated.withValues(alpha: 0.88),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: isUsb
-                  ? AppColors.accentGreen.withValues(alpha: 0.7)
-                  : AppColors.borderHighlight,
-              width: 1.0,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.25),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                isUsb ? Icons.usb_rounded : Icons.folder_rounded,
-                size: 13,
-                color: isUsb ? AppColors.accentGreen : AppColors.primary,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                '$unitText • $folderText',
-                style: const TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(width: 6),
-              const Icon(
-                Icons.arrow_drop_down_rounded,
-                size: 16,
-                color: AppColors.textSecondary,
-              ),
-            ],
-          ),
         ),
       ),
     );
@@ -550,58 +444,60 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     );
   }
 
-  /// Vista complementaria para el modo 50/50 con previsualización del recurso activo
+  /// Vista complementaria para el modo 50/50 y 75/25:
+  /// Muestra una cuadrícula táctil con todos los recursos disponibles (PDFs, Slides, Fotos, Videos, Audios, Docs)
+  /// de la carpeta o memoria activa para que el maestro seleccione y coloque al instante en ese espacio.
   Widget _buildSplitResourceView() {
+    final allResources = [
+      ...?_currentTopic?.leftPanelResources,
+      ...?_currentTopic?.rightPanelResources,
+    ];
+
     return Container(
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: AppColors.borderHighlight, width: 1.2),
       ),
+      clipBehavior: Clip.antiAlias,
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          // Cabecera con título de la carpeta activa y botón para cambiar de carpeta/USB
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
             decoration: const BoxDecoration(
               color: AppColors.surfaceElevated,
               borderRadius: BorderRadius.vertical(top: Radius.circular(14)),
             ),
             child: Row(
               children: [
-                Icon(
-                  _selectedResource?.icon ?? Icons.auto_stories_rounded,
+                const Icon(
+                  Icons.folder_open_rounded,
                   size: 16,
-                  color: _selectedResource?.accentColor ?? AppColors.primary,
+                  color: AppColors.primary,
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    _selectedResource?.name ?? (_activeMediaTitle ?? 'Visor Didáctico Activo'),
+                    _currentTopic?.name ?? 'Recursos Educativos',
                     overflow: TextOverflow.ellipsis,
-                    style: AppTextStyles.cardTitle.copyWith(fontSize: 13),
+                    style: AppTextStyles.cardTitle.copyWith(fontSize: 12.5),
                   ),
                 ),
-                if (_selectedResource != null)
-                  Container(
-                    margin: const EdgeInsets.only(right: 8),
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: _selectedResource!.accentColor.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      _selectedResource!.categoryLabel,
-                      style: TextStyle(
-                        fontSize: 8.5,
-                        fontWeight: FontWeight.bold,
-                        color: _selectedResource!.accentColor,
-                      ),
-                    ),
+                TextButton.icon(
+                  onPressed: () => _openFolderPickerDialog(),
+                  icon: const Icon(Icons.storage_rounded, size: 14),
+                  label: const Text('Cambiar Carpeta / USB', style: TextStyle(fontSize: 10.5)),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    visualDensity: VisualDensity.compact,
                   ),
+                ),
                 IconButton(
                   icon: const Icon(Icons.close_rounded, size: 16),
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                  constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
                   onPressed: () {
                     setState(() {
                       _layoutMode = ScreenDistributionMode.standard801010;
@@ -611,65 +507,127 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
               ],
             ),
           ),
+
+          // Lista de recursos encontrados o botón de apertura
           Expanded(
-            child: Center(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 58,
-                      height: 58,
-                      decoration: BoxDecoration(
-                        color: (_selectedResource?.accentColor ?? AppColors.primary)
-                            .withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: (_selectedResource?.accentColor ?? AppColors.primary)
-                              .withValues(alpha: 0.35),
-                          width: 1.5,
+            child: allResources.isEmpty
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.folder_shared_rounded,
+                            size: 46,
+                            color: AppColors.primary.withValues(alpha: 0.6),
+                          ),
+                          const SizedBox(height: 10),
+                          const Text(
+                            'No se encontraron archivos en esta carpeta',
+                            textAlign: TextAlign.center,
+                            style: AppTextStyles.sectionTitle,
+                          ),
+                          const SizedBox(height: 6),
+                          const Text(
+                            'Selecciona otra carpeta de tu memoria interna o memoria USB para cargar recursos.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(fontSize: 11.5, color: AppColors.textMuted),
+                          ),
+                          const SizedBox(height: 14),
+                          ElevatedButton.icon(
+                            onPressed: () => _openFolderPickerDialog(),
+                            icon: const Icon(Icons.folder_open_rounded, size: 16),
+                            label: const Text('Elegir Carpeta o USB'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primary,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : GridView.builder(
+                    padding: const EdgeInsets.all(8),
+                    physics: const BouncingScrollPhysics(),
+                    gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                      maxCrossAxisExtent: 140,
+                      childAspectRatio: 0.95,
+                      crossAxisSpacing: 8,
+                      mainAxisSpacing: 8,
+                    ),
+                    itemCount: allResources.length,
+                    itemBuilder: (context, index) {
+                      final item = allResources[index];
+                      return InkWell(
+                        onTap: () {
+                          _onResourceSelected(item);
+                        },
+                        borderRadius: BorderRadius.circular(10),
+                        child: Container(
+                          padding: const EdgeInsets.all(5),
+                          decoration: BoxDecoration(
+                            color: AppColors.surfaceLight.withValues(alpha: 0.35),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: item.accentColor.withValues(alpha: 0.4),
+                              width: 1.0,
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Expanded(
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(6),
+                                  child: Container(
+                                    color: item.accentColor.withValues(alpha: 0.12),
+                                    child: Center(
+                                      child: Icon(
+                                        item.icon,
+                                        size: 28,
+                                        color: item.accentColor,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                item.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    item.extension.toUpperCase().replaceAll('.', ''),
+                                    style: TextStyle(
+                                      fontSize: 8,
+                                      fontWeight: FontWeight.bold,
+                                      color: item.accentColor,
+                                    ),
+                                  ),
+                                  Text(
+                                    item.formattedSize,
+                                    style: const TextStyle(fontSize: 8, color: AppColors.textMuted),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                      child: Icon(
-                        _selectedResource?.icon ?? Icons.touch_app_rounded,
-                        size: 30,
-                        color: _selectedResource?.accentColor ?? AppColors.primary,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      _selectedResource != null
-                          ? _selectedResource!.name
-                          : 'Material Didáctico Preparado',
-                      textAlign: TextAlign.center,
-                      style: AppTextStyles.sectionTitle.copyWith(fontSize: 15),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _selectedResource != null
-                          ? 'Tamaño: ${_selectedResource!.formattedSize} • Tipo: ${_selectedResource!.extension.toUpperCase()}'
-                          : 'Selecciona un archivo del carrusel izquierdo o derecho',
-                      textAlign: TextAlign.center,
-                      style: AppTextStyles.body.copyWith(
-                        color: AppColors.textMuted,
-                        fontSize: 11,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    OutlinedButton.icon(
-                      onPressed: _openTopicSelectorDialog,
-                      icon: const Icon(Icons.folder_open_rounded, size: 15),
-                      label: const Text('Cambiar Tema o Unidad'),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+                      );
+                    },
+                  ),
           ),
         ],
       ),

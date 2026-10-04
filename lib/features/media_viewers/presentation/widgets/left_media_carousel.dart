@@ -87,11 +87,6 @@ class _LeftMediaCarouselState extends State<LeftMediaCarousel> {
       ),
       child: Column(
         children: [
-          // Cabecera compacta para aprovechar al máximo el espacio vertical
-          _buildCompactHeader(),
-
-          const Divider(height: 1, color: AppColors.borderSubtle),
-
           // Lista vertical deslizable de previsualizaciones pegada a los bordes
           Expanded(
             child: _items.isEmpty
@@ -133,47 +128,9 @@ class _LeftMediaCarouselState extends State<LeftMediaCarousel> {
                   ),
           ),
 
-          // Botón inferior compacto para abrir el explorador de temas y USB
+          // Botón inferior ampliado para abrir el explorador de temas y USB
           _buildCompactAddButton(),
         ],
-      ),
-    );
-  }
-
-  Widget _buildCompactHeader() {
-    return InkWell(
-      onTap: widget.onOpenTopicSelector,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(
-              Icons.auto_stories_rounded,
-              size: 13,
-              color: AppColors.primary,
-            ),
-            const SizedBox(width: 4),
-            const Expanded(
-              child: Text(
-                'Slides & PDF',
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 9.5,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
-                  letterSpacing: -0.2,
-                ),
-              ),
-            ),
-            if (widget.onOpenTopicSelector != null)
-              const Icon(
-                Icons.unfold_more_rounded,
-                size: 12,
-                color: AppColors.textMuted,
-              ),
-          ],
-        ),
       ),
     );
   }
@@ -245,26 +202,33 @@ class _LeftMediaCarouselState extends State<LeftMediaCarousel> {
 
   Widget _buildCompactAddButton() {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
       child: Tooltip(
         message: 'Cambiar Año, Tema o Memoria USB',
         child: InkWell(
           onTap: widget.onOpenTopicSelector,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(10),
           child: Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(vertical: 4),
+            padding: const EdgeInsets.symmetric(vertical: 8),
             decoration: BoxDecoration(
-              color: AppColors.surfaceLight.withValues(alpha: 0.5),
-              borderRadius: BorderRadius.circular(8),
+              color: AppColors.primary.withValues(alpha: 0.16),
+              borderRadius: BorderRadius.circular(10),
               border: Border.all(
-                color: AppColors.borderHighlight,
-                width: 0.8,
+                color: AppColors.primary.withValues(alpha: 0.65),
+                width: 1.2,
               ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.2),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
             ),
             child: const Icon(
               Icons.folder_open_rounded,
-              size: 14,
+              size: 22,
               color: AppColors.primary,
             ),
           ),
