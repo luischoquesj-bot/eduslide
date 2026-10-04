@@ -48,6 +48,10 @@ class _InteractiveResourceViewerState extends State<InteractiveResourceViewer>
   final TransformationController _transformationController = TransformationController();
   int _rotationQuarterTurns = 0;
 
+  // Caché persistente en memoria para guardar el progreso del maestro (página de PDF, posición de medios)
+  static final Map<String, int> _pdfSavedPages = {};
+  static final Map<String, Duration> _mediaSavedPositions = {};
+
   // Lector de PDF real
   PDFViewController? _pdfViewController;
   int _pdfCurrentPage = 0;
@@ -103,6 +107,17 @@ class _InteractiveResourceViewerState extends State<InteractiveResourceViewer>
   }
 
   void _disposeEngines() {
+    final item = widget.resource;
+    if (_pdfCurrentPage > 0) {
+      _pdfSavedPages[item.path] = _pdfCurrentPage;
+    }
+    if (_videoController != null && _videoController!.value.isInitialized) {
+      _mediaSavedPositions[item.path] = _videoController!.value.position;
+    }
+    if (_audioController != null && _audioController!.value.isInitialized) {
+      _mediaSavedPositions[item.path] = _audioController!.value.position;
+    }
+
     _videoControlsTimer?.cancel();
     _videoControlsTimer = null;
     _showVideoControls = true;
@@ -151,10 +166,16 @@ class _InteractiveResourceViewerState extends State<InteractiveResourceViewer>
     final file = File(item.path);
     final exists = file.existsSync();
 
-    if (item.type == ResourceType.video && exists) {
+    if (item.type == ResourceType.pdf) {
+      _pdfCurrentPage = _pdfSavedPages[item.path] ?? 0;
+    } else if (item.type == ResourceType.video && exists) {
       _videoController = VideoPlayerController.file(file)
         ..initialize().then((_) {
           if (mounted) {
+            final savedPos = _mediaSavedPositions[item.path];
+            if (savedPos != null && savedPos > Duration.zero) {
+              _videoController!.seekTo(savedPos);
+            }
             setState(() {
               _isVideoInitialized = true;
               _showVideoControls = true;
@@ -175,6 +196,10 @@ class _InteractiveResourceViewerState extends State<InteractiveResourceViewer>
       _audioController = VideoPlayerController.file(file)
         ..initialize().then((_) {
           if (mounted) {
+            final savedPos = _mediaSavedPositions[item.path];
+            if (savedPos != null && savedPos > Duration.zero) {
+              _audioController!.seekTo(savedPos);
+            }
             setState(() {
               _isAudioInitialized = true;
             });
@@ -1151,14 +1176,23 @@ class _InteractiveResourceViewerState extends State<InteractiveResourceViewer>
                 _pdfTotalPages = pages ?? 0;
                 _pdfReady = true;
               });
+              final savedPage = _pdfSavedPages[item.path];
+              if (savedPage != null && savedPage > 0) {
+                _pdfViewController?.setPage(savedPage);
+              }
             },
             onViewCreated: (controller) {
               _pdfViewController = controller;
+              final savedPage = _pdfSavedPages[item.path];
+              if (savedPage != null && savedPage > 0) {
+                controller.setPage(savedPage);
+              }
             },
             onPageChanged: (page, total) {
               setState(() {
                 _pdfCurrentPage = page ?? 0;
                 _pdfTotalPages = total ?? 0;
+                _pdfSavedPages[item.path] = _pdfCurrentPage;
               });
             },
             onError: (error) {

@@ -17,6 +17,12 @@ import '../widgets/welcome_card.dart';
 /// Pantalla Principal del Espacio de Trabajo (Workspace) de EduSlide.
 /// Proporciona un entorno horizontal inmersivo de pantalla completa para proyectores,
 /// con barras laterales conectadas al motor de archivos local/USB y pizarra central adaptable.
+/// Capa activa en primer plano durante la superposición al 100%
+enum ActiveFrontLayer { left, right }
+
+/// Pantalla Principal del Espacio de Trabajo (Workspace) de EduSlide.
+/// Proporciona un entorno horizontal inmersivo de pantalla completa para proyectores,
+/// con barras laterales conectadas al motor de archivos local/USB y pizarra central adaptable.
 class WorkspaceScreen extends StatefulWidget {
   const WorkspaceScreen({super.key});
 
@@ -32,19 +38,22 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   StorageUnit? _currentStorageUnit;
   TopicFolder? _currentTopic;
 
-  // Recursos activos en pantalla (Requisitos 1, 2 y 5)
+  // Recursos activos en pantalla
   ResourceItem? _leftResource; // Recurso del carrusel izquierdo (PDFs, Diapositivas, Docs)
   ResourceItem? _rightResource; // Recurso del carrusel derecho (Imágenes, Videos, Audios)
+
+  // Control de capa frontal en superposición al 100%
+  ActiveFrontLayer _frontLayer = ActiveFrontLayer.left;
 
   // Claves persistentes para preservar estados (reproducción, página de PDF, zoom y trazos)
   final GlobalKey _whiteboardKey = GlobalKey();
   final GlobalKey _leftResourceViewerKey = GlobalKey();
   final GlobalKey _rightResourceViewerKey = GlobalKey();
 
-  // Estado de distribución de pantalla y proporciones iniciales (50% / 50% compartido predeterminado)
+  // Estado de distribución de pantalla y proporción del recurso activo
+  // Por defecto inicia al 100% para apertura total del documento
   ScreenDistributionMode _layoutMode = ScreenDistributionMode.standard801010;
-  double _leftResourceRatio = 0.50; // Inicial al 50%
-  double _rightResourceRatio = 0.50; // Inicial al 50%
+  double _resourceSplitRatio = 1.0; // 1.0 = 100% superpuesto, 0.50 = 50/50, 0.75 = 75/25
 
   // Estado del mando remoto
   bool _isRemoteConnected = false;
@@ -156,16 +165,13 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     );
   }
 
-  /// Selección de recurso desde el carrusel izquierdo (PDFs, Diapositivas, Docs) (Requisitos 1 & 2):
-  /// Se abre predeterminadamente al 50%, compartiendo espacio con la pizarra (que pasa a 50%)
-  /// o compartiendo espacio 50/50 con el recurso del carrusel derecho si ya estuviera abierto.
+  /// Selección de recurso desde el carrusel izquierdo (PDFs, Diapositivas, Docs)
+  /// Se abre al 100% sobre la pizarra. Si el recurso derecho estaba abierto, pasa al frente al 100%.
   void _onLeftResourceSelected(ResourceItem item) {
     setState(() {
       _leftResource = item;
-      _leftResourceRatio = 0.50; // Inicial predeterminado al 50%
-      if (_rightResource != null) {
-        _rightResourceRatio = 0.50;
-      }
+      _frontLayer = ActiveFrontLayer.left;
+      _resourceSplitRatio = 1.0; // Inicia al 100%
       if (_layoutMode == ScreenDistributionMode.full100) {
         _layoutMode = ScreenDistributionMode.standard801010;
       }
@@ -173,16 +179,13 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     });
   }
 
-  /// Selección de recurso desde el carrusel derecho (Imágenes, Videos, Audios) (Requisitos 1 & 2):
-  /// Se abre predeterminadamente al 50%, compartiendo espacio con la pizarra (que pasa a 50%)
-  /// o compartiendo espacio 50/50 con el recurso del carrusel izquierdo si ya estuviera abierto.
+  /// Selección de recurso desde el carrusel derecho (Imágenes, Videos, Audios)
+  /// Se abre al 100% por encima del documento de la barra izquierda (o de la pizarra).
   void _onRightResourceSelected(ResourceItem item) {
     setState(() {
       _rightResource = item;
-      _rightResourceRatio = 0.50; // Inicial predeterminado al 50%
-      if (_leftResource != null) {
-        _leftResourceRatio = 0.50;
-      }
+      _frontLayer = ActiveFrontLayer.right;
+      _resourceSplitRatio = 1.0; // Inicia al 100% superpuesto
       if (_layoutMode == ScreenDistributionMode.full100) {
         _layoutMode = ScreenDistributionMode.standard801010;
       }
@@ -210,17 +213,23 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       onClose: () {
         setState(() {
           _leftResource = null;
-          // Si el derecho está abierto, se mantiene a 50% compartiendo con la pizarra que se re-descubre
+          // Si el derecho está abierto, se muestra ahora al 100% en primer plano
           if (_rightResource != null) {
-            _rightResourceRatio = 0.50;
+            _frontLayer = ActiveFrontLayer.right;
+            _resourceSplitRatio = 1.0;
           }
         });
       },
       onRatioChanged: (ratio) {
         setState(() {
-          _leftResourceRatio = ratio;
-          if (_rightResource != null) {
-            _rightResourceRatio = (1.0 - ratio).clamp(0.20, 0.80);
+          _resourceSplitRatio = ratio;
+          _frontLayer = ActiveFrontLayer.left;
+          if (ratio >= 0.95) {
+            _layoutMode = ScreenDistributionMode.standard801010;
+          } else if ((ratio - 0.50).abs() < 0.05) {
+            _layoutMode = ScreenDistributionMode.split5050;
+          } else if ((ratio - 0.75).abs() < 0.05) {
+            _layoutMode = ScreenDistributionMode.split7525;
           }
         });
       },
@@ -246,17 +255,23 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       onClose: () {
         setState(() {
           _rightResource = null;
-          // Si el izquierdo está abierto, se mantiene a 50% compartiendo con la pizarra que se re-descubre
+          // Si el izquierdo está abierto, se muestra ahora al 100% en primer plano
           if (_leftResource != null) {
-            _leftResourceRatio = 0.50;
+            _frontLayer = ActiveFrontLayer.left;
+            _resourceSplitRatio = 1.0;
           }
         });
       },
       onRatioChanged: (ratio) {
         setState(() {
-          _rightResourceRatio = ratio;
-          if (_leftResource != null) {
-            _leftResourceRatio = (1.0 - ratio).clamp(0.20, 0.80);
+          _resourceSplitRatio = ratio;
+          _frontLayer = ActiveFrontLayer.right;
+          if (ratio >= 0.95) {
+            _layoutMode = ScreenDistributionMode.standard801010;
+          } else if ((ratio - 0.50).abs() < 0.05) {
+            _layoutMode = ScreenDistributionMode.split5050;
+          } else if ((ratio - 0.75).abs() < 0.05) {
+            _layoutMode = ScreenDistributionMode.split7525;
           }
         });
       },
@@ -332,22 +347,24 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
         return Padding(
           padding: const EdgeInsets.all(1.5),
           child: _leftResource != null
-              ? _buildLeftViewer(currentRatio: 1.0)
+              ? (_frontLayer == ActiveFrontLayer.left
+                  ? _buildLeftViewer(currentRatio: 1.0)
+                  : (_rightResource != null
+                      ? _buildRightViewer(currentRatio: 1.0)
+                      : _buildLeftViewer(currentRatio: 1.0)))
               : (_rightResource != null
                   ? _buildRightViewer(currentRatio: 1.0)
                   : _buildWhiteboard(isStandalone: true)),
         );
 
       case ScreenDistributionMode.split5050:
-        return Padding(
-          padding: const EdgeInsets.all(1.5),
-          child: _buildSplitLayout(resourceFlex: 50, whiteboardFlex: 50),
-        );
-
       case ScreenDistributionMode.split7525:
         return Padding(
           padding: const EdgeInsets.all(1.5),
-          child: _buildSplitLayout(resourceFlex: 75, whiteboardFlex: 25),
+          child: _buildSplitLayout(
+            resourceFlex: _layoutMode == ScreenDistributionMode.split7525 ? 75 : 50,
+            whiteboardFlex: _layoutMode == ScreenDistributionMode.split7525 ? 25 : 50,
+          ),
         );
 
       case ScreenDistributionMode.standard801010:
@@ -387,12 +404,15 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     }
   }
 
-  /// Área central del modo estándar (Requisitos 1, 2 y 5):
-  /// - Sin recursos: Pizarra al 100% libre.
-  /// - 1 recurso izquierdo: 50% recurso izquierdo y 50% pizarra a la derecha.
-  /// - 1 recurso derecho: 50% pizarra a la izquierda y 50% recurso derecho a la derecha.
-  /// - 2 recursos abiertos (izq y der): se muestran lado a lado compartiendo el 50% cada uno,
-  ///   manteniendo la pizarra montada detrás para no perder trazos ni dibujos.
+  /// Área central del modo estándar (Reorganización pedagógica):
+  /// 1. Sin recursos abiertos: Pizarra al 100% libre.
+  /// 2. Al abrir un recurso de la barra izquierda (PDF, .docx, .zip, etc.): se abre al 100% sobre la pizarra.
+  /// 3. Al abrir un recurso de la barra derecha (imagen, video, audio): se abre al 100% superponiéndose por encima
+  ///    del documento de la barra izquierda (manteniendo vivo el documento debajo para no perder la página).
+  /// 4. Si el maestro selecciona un recurso de la barra izquierda mientras está visible el de la derecha:
+  ///    automáticamente el documento pasa al frente superponiéndose al de la derecha.
+  /// 5. Si el maestro cierra el recurso del frente: el recurso de atrás se muestra nuevamente al 100%.
+  /// 6. Si el maestro elige dividir pantalla (50%, 75%): ambos se muestran compartiendo el espacio lado a lado.
   Widget _buildCenterWorkspace() {
     final bool hasLeft = _leftResource != null;
     final bool hasRight = _rightResource != null;
@@ -405,111 +425,127 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       );
     }
 
-    // Caso 4: Ambos recursos abiertos lado a lado (50% / 50% inicial) (Requisito 2 & 5)
+    // Modo Dividido Explícito (50/50 o 75/25)
+    final bool isSplitRequested = _resourceSplitRatio < 0.95;
+
+    // Caso 4: Ambos recursos abiertos (Izquierdo y Derecho)
     if (hasLeft && hasRight) {
-      if (_leftResourceRatio >= 0.95) {
+      if (isSplitRequested) {
+        // Dividido lado a lado (50/50 o 75/25)
+        int leftFlex = 50;
+        int rightFlex = 50;
+        if ((_resourceSplitRatio - 0.75).abs() < 0.05) {
+          leftFlex = _frontLayer == ActiveFrontLayer.left ? 75 : 25;
+          rightFlex = 100 - leftFlex;
+        }
+
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 2.0),
-          child: _buildLeftViewer(currentRatio: 1.0),
-        );
-      }
-      if (_rightResourceRatio >= 0.95) {
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 2.0),
-          child: _buildRightViewer(currentRatio: 1.0),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              _buildWhiteboard(isStandalone: false),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    flex: leftFlex,
+                    child: _buildLeftViewer(currentRatio: leftFlex / 100.0),
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    flex: rightFlex,
+                    child: _buildRightViewer(currentRatio: rightFlex / 100.0),
+                  ),
+                ],
+              ),
+            ],
+          ),
         );
       }
 
-      final int leftFlex = (_leftResourceRatio * 100).toInt().clamp(20, 80);
-      final int rightFlex = 100 - leftFlex;
+      // Modo 100% Superpuesto: uno delante del otro al 100%, preservando ambos vivos en el Stack
+      final leftViewer = _buildLeftViewer(currentRatio: 1.0);
+      final rightViewer = _buildRightViewer(currentRatio: 1.0);
 
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 2.0),
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // Pizarra montada debajo para preservar trazos y dibujos
+            // Base: Pizarra siempre montada
             _buildWhiteboard(isStandalone: false),
 
-            // Ambos recursos visibles lado a lado en primer plano sin taparse
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(
-                  flex: leftFlex,
-                  child: _buildLeftViewer(currentRatio: leftFlex / 100.0),
-                ),
-                const SizedBox(width: 4),
-                Expanded(
-                  flex: rightFlex,
-                  child: _buildRightViewer(currentRatio: rightFlex / 100.0),
-                ),
-              ],
-            ),
+            // Capa detrás y capa frontal según _frontLayer
+            if (_frontLayer == ActiveFrontLayer.right) ...[
+              leftViewer, // Documento queda atrás vivo (pág. 6 intacta)
+              rightViewer, // Imagen/Video superpuesto al 100% en el frente
+            ] else ...[
+              rightViewer, // Imagen/Video queda atrás vivo
+              leftViewer, // Documento superpuesto al 100% en el frente
+            ],
           ],
         ),
       );
     }
 
-    // Caso 2: Solo Recurso Izquierdo + Pizarra a la Derecha (50% / 50% inicial) (Requisito 1)
+    // Caso 2: Solo Recurso Izquierdo
     if (hasLeft && !hasRight) {
-      if (_leftResourceRatio >= 0.95) {
+      if (isSplitRequested) {
+        final int leftFlex = (_resourceSplitRatio * 100).toInt().clamp(20, 80);
+        final int whiteboardFlex = 100 - leftFlex;
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 2.0),
-          child: _buildLeftViewer(currentRatio: 1.0),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                flex: leftFlex,
+                child: _buildLeftViewer(currentRatio: leftFlex / 100.0),
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                flex: whiteboardFlex,
+                child: _buildWhiteboard(isStandalone: false),
+              ),
+            ],
+          ),
         );
       }
 
-      final int leftFlex = (_leftResourceRatio * 100).toInt().clamp(20, 80);
-      final int whiteboardFlex = 100 - leftFlex;
-
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 2.0),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              flex: leftFlex,
-              child: _buildLeftViewer(currentRatio: leftFlex / 100.0),
-            ),
-            const SizedBox(width: 4),
-            Expanded(
-              flex: whiteboardFlex,
-              child: _buildWhiteboard(isStandalone: false),
-            ),
-          ],
-        ),
+        child: _buildLeftViewer(currentRatio: 1.0),
       );
     }
 
-    // Caso 3: Pizarra a la Izquierda + Recurso Derecho (50% / 50% inicial) (Requisito 1)
+    // Caso 3: Solo Recurso Derecho
     if (!hasLeft && hasRight) {
-      if (_rightResourceRatio >= 0.95) {
+      if (isSplitRequested) {
+        final int rightFlex = (_resourceSplitRatio * 100).toInt().clamp(20, 80);
+        final int whiteboardFlex = 100 - rightFlex;
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 2.0),
-          child: _buildRightViewer(currentRatio: 1.0),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                flex: whiteboardFlex,
+                child: _buildWhiteboard(isStandalone: false),
+              ),
+              const SizedBox(width: 4),
+              Expanded(
+                flex: rightFlex,
+                child: _buildRightViewer(currentRatio: rightFlex / 100.0),
+              ),
+            ],
+          ),
         );
       }
 
-      final int rightFlex = (_rightResourceRatio * 100).toInt().clamp(20, 80);
-      final int whiteboardFlex = 100 - rightFlex;
-
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 2.0),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              flex: whiteboardFlex,
-              child: _buildWhiteboard(isStandalone: false),
-            ),
-            const SizedBox(width: 4),
-            Expanded(
-              flex: rightFlex,
-              child: _buildRightViewer(currentRatio: rightFlex / 100.0),
-            ),
-          ],
-        ),
+        child: _buildRightViewer(currentRatio: 1.0),
       );
     }
 
@@ -802,9 +838,6 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 
   void _openControlBottomSheet() {
     final bool hasActive = _leftResource != null || _rightResource != null;
-    final double activeRatio = _leftResource != null
-        ? _leftResourceRatio
-        : (_rightResource != null ? _rightResourceRatio : 0.50);
 
     ControlBottomSheet.show(
       context,
@@ -812,6 +845,13 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       onLayoutChanged: (newLayout) {
         setState(() {
           _layoutMode = newLayout;
+          if (newLayout == ScreenDistributionMode.split5050) {
+            _resourceSplitRatio = 0.50;
+          } else if (newLayout == ScreenDistributionMode.split7525) {
+            _resourceSplitRatio = 0.75;
+          } else if (newLayout == ScreenDistributionMode.full100) {
+            _resourceSplitRatio = 1.0;
+          }
         });
       },
       isRemoteConnected: _isRemoteConnected,
@@ -820,37 +860,43 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           _isRemoteConnected = connected;
         });
       },
-      currentSplitRatio: activeRatio,
+      currentSplitRatio: _resourceSplitRatio,
       onSplitRatioChanged: (ratio) {
         setState(() {
-          if (_leftResource != null) {
-            _leftResourceRatio = ratio;
-            if (_rightResource != null) {
-              _rightResourceRatio = (1.0 - ratio).clamp(0.20, 0.80);
+          _resourceSplitRatio = ratio;
+          if (ratio >= 0.95) {
+            if (_layoutMode != ScreenDistributionMode.full100) {
+              _layoutMode = ScreenDistributionMode.standard801010;
             }
-          } else if (_rightResource != null) {
-            _rightResourceRatio = ratio;
-          }
-          if (ratio >= 0.95 && _layoutMode == ScreenDistributionMode.full100) {
-            // Se mantiene en pantalla completa
-          } else if (_layoutMode == ScreenDistributionMode.full100 && ratio < 0.95) {
-            _layoutMode = ScreenDistributionMode.standard801010;
+          } else if ((ratio - 0.50).abs() < 0.05) {
+            _layoutMode = ScreenDistributionMode.split5050;
+          } else if ((ratio - 0.75).abs() < 0.05) {
+            _layoutMode = ScreenDistributionMode.split7525;
           }
         });
       },
-      isResourceOnLeft: _leftResource != null,
+      isResourceOnLeft: _frontLayer == ActiveFrontLayer.left,
       onResourceSideChanged: (onLeft) {
         setState(() {
-          final temp = _leftResource;
-          _leftResource = _rightResource;
-          _rightResource = temp;
+          _frontLayer = onLeft ? ActiveFrontLayer.left : ActiveFrontLayer.right;
         });
       },
       hasActiveResource: hasActive,
       onCloseResource: () {
         setState(() {
-          _leftResource = null;
-          _rightResource = null;
+          if (_frontLayer == ActiveFrontLayer.left) {
+            _leftResource = null;
+            if (_rightResource != null) {
+              _frontLayer = ActiveFrontLayer.right;
+              _resourceSplitRatio = 1.0;
+            }
+          } else {
+            _rightResource = null;
+            if (_leftResource != null) {
+              _frontLayer = ActiveFrontLayer.left;
+              _resourceSplitRatio = 1.0;
+            }
+          }
         });
       },
     );
